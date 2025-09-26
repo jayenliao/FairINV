@@ -108,8 +108,8 @@ class Results:
                 "F1_std":   np.std(self.f1[:, i]),
                 "ACC_mean": np.mean(self.acc[:, i]),
                 "ACC_std":  np.std(self.acc[:, i]),
-                'SP_mean':  np.mean(self.parity[:, i]),
-                'SP_std':   np.std(self.parity[:, i]),
+                'DP_mean':  np.mean(self.parity[:, i]),
+                'DP_std':   np.std(self.parity[:, i]),
                 'EO_mean':  np.mean(self.equality[:, i]),
                 'EO_std':   np.std(self.equality[:, i])
             }
