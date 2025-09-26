@@ -9,7 +9,7 @@ from torch.autograd import grad
 from torch.autograd import Function
 import torch.distributed as dist
 import os
-from torch_geometric.nn import GCNConv, GINConv, SAGEConv, GraphConv, global_mean_pool
+from torch_geometric.nn import GCNConv, GINConv, SAGEConv, GATConv, SGConv, GraphConv, global_mean_pool
 from torch.optim.lr_scheduler import MultiStepLR
 import math
 from torch_geometric.data import Data
@@ -17,7 +17,7 @@ from torch_geometric.loader import NeighborLoader
 from datetime import datetime
 from tensorboardX import SummaryWriter
 from sklearn.metrics import accuracy_score, roc_auc_score, f1_score
-from utils import fair_metric
+from utils import EpochLogger, fair_metric
 
 
 class LogWriter:
@@ -41,14 +41,14 @@ class FairINV(nn.Module):
         self.classifier = nn.Linear(args.hid_dim, args.out_dim).to(args.device)
         self.optimizer_infer = torch.optim.Adam(list(self.gnn_backbone.parameters())+list(self.classifier.parameters()),
                                                 lr=args.lr, weight_decay=args.weight_decay)
-        
+
         for m in self.modules():
             self.weights_init(m)
 
         self.criterion_cls = nn.BCEWithLogitsLoss()
         self.criterion_irm = IRMLoss()
         self.criterion_env = nn.BCEWithLogitsLoss(reduction='none')
-    
+
     def weights_init(self, m):
         if isinstance(m, nn.Linear):
             torch.nn.init.xavier_uniform_(m.weight.data)
@@ -63,12 +63,15 @@ class FairINV(nn.Module):
 
         if hasattr(self.args, 'seed_dir'):
             writer = LogWriter(self.args.seed_dir)
-        
+        else:
+            raise Warning("No log directory is specified!")
+
         for i in range(self.args.partition_times):
             part_mat, edge_weight_inv = self.sens_partition(data, writer)
             part_mat_list.append(part_mat[data.idx_train])
             edge_weight_inv_list.append(edge_weight_inv)
 
+        elog = EpochLogger(self.args.seed_dir)
         for epoch in range(self.args.epochs):
             loss_log_list = []
             loss_cls_all, loss_irm_all = 0, 0
@@ -87,7 +90,7 @@ class FairINV(nn.Module):
                 output = self.classifier(emb)
 
                 loss_cls = self.criterion_cls(output[data.idx_train], data.labels[data.idx_train].unsqueeze(1).float())
-                
+
                 group_assign = part_mat_list[i].argmax(dim=1)
                 for j in range(part_mat_list[i].shape[-1]):
                     # split groups
@@ -124,14 +127,14 @@ class FairINV(nn.Module):
             parity_val, equality_val = fair_metric(pred[data.idx_val].cpu().numpy(),
                                                    data.labels[data.idx_val].cpu().numpy(),
                                                    data.sens[data.idx_val].cpu().numpy())
-            
+
             if self.args.dataset in ['pokec_z', 'pokec_n']:
                 if loss_cls_val.item() < best_loss:
                     best_loss = loss_cls_val.item()
                     torch.save(self.state_dict(), f'./weights/FairINV_{self.args.encoder}.pt')
             else:
-                if auc_val-parity_val-equality_val > best_result:
-                    best_result = auc_val-parity_val-equality_val
+                if auc_val - parity_val - equality_val > best_result:
+                    best_result = auc_val - parity_val - equality_val
                     torch.save(self.state_dict(), f'./weights/FairINV_{self.args.encoder}.pt')
 
             if 'writer' in locals():
@@ -160,7 +163,7 @@ class FairINV(nn.Module):
         scale = torch.tensor(1.).cuda().requires_grad_()
         error = self.criterion_env(logits[data.idx_train]*scale,
                                    data.labels[data.idx_train].unsqueeze(1).float())
-        
+
         emb_cat = torch.cat([emb[data.edge_index.storage._row], emb[data.edge_index.storage._col]], dim=1)
 
         for epoch in range(500):
@@ -177,7 +180,7 @@ class FairINV(nn.Module):
             risk_final = -torch.stack(loss_penalty_list).sum()
             risk_final.backward(retain_graph=True)
             optimizer_part_mat.step()
-                
+
             if 'writer' in locals():
                 # log training set loss
                 writer.record(loss_item={'sens_part/risk_final': risk_final}, step=epoch)
@@ -264,7 +267,7 @@ class ConstructModel(nn.Module):
     def __init__(self, in_dim, hid_dim, encoder, layer_num):
         super(ConstructModel, self).__init__()
         self.encoder = encoder
-        
+
         if encoder == 'gcn':
             self.model = nn.ModuleList()
             for i in range(layer_num-1):
@@ -276,7 +279,26 @@ class ConstructModel(nn.Module):
             self.model = GIN(nfeat=in_dim, nhid=hid_dim, dropout=0.5)
         elif encoder == 'sage':
             self.model = SAGE(nfeat=in_dim, nhid=hid_dim, dropout=0.5)
-        
+        elif encoder == 'gat':
+            # 2-layer GAT as a simple default
+            self.model = nn.ModuleList()
+            if layer_num == 1:
+                self.model.append(GATConv(in_dim, hid_dim, heads=4, dropout=0.5))
+            else:
+                self.model.append(GATConv(in_dim, hid_dim, heads=4, dropout=0.5))
+                for _ in range(layer_num-2):
+                    self.model.append(GATConv(hid_dim, hid_dim, heads=4, dropout=0.5))
+                self.model.append(GATConv(hid_dim, hid_dim, heads=4, dropout=0.5))
+        elif encoder == 'sgc':
+            # SGConv implements SGC (K-step propagation + linear)
+            # We'll stack K via layer_num=1 and control hops by 'K' below;
+            # or mimic SGC by chaining SGConv with K>1.
+            self.model = nn.ModuleList()
+            # Use K=2 as a sensible default; feel free to expose it as an arg.
+            K = 2
+            self.model.append(SGConv(in_dim, hid_dim, K=K, cached=False, add_self_loops=True))
+
+
         for m in self.modules():
             self.weights_init(m)
 
@@ -287,16 +309,18 @@ class ConstructModel(nn.Module):
                 m.bias.data.fill_(0.0)
 
     def forward(self, x, edge_index, edge_weight=None):
-        if self.encoder == 'gcn':
+        if self.encoder in ['gcn', 'gin', 'sage', 'gat', 'sgc']:
             h = x
             for i, layer in enumerate(self.model):
-                h = layer(h, edge_index, edge_weight=edge_weight)
-        elif self.encoder == 'gin':
-            h = self.model(x, edge_index)
-        elif self.encoder == 'sage':
-            h = self.model(x, edge_index)
-        return h
-
+                # PyG’s GCNConv/GINConv/SAGEConv/GATConv/SGConv all accept SparseTensor edge_index
+                # For GATConv/SGConv we won’t pass edge_weight unless you implement it explicitly.
+                if self.encoder == 'gcn':
+                    h = layer(h, edge_index, edge_weight=edge_weight)
+                elif self.encoder in ['gat', 'gin', 'sage', 'sgc']:
+                    h = layer(h, edge_index)
+            return h
+        else:
+            raise NotImplementedError
 
 class SAP(nn.Module):
     def __init__(self, in_dim, hid_dim, out_dim, encoder, layer_num):
@@ -332,14 +356,14 @@ class SAP(nn.Module):
 
 
 class GIN(nn.Module):
-    def __init__(self, nfeat, nhid, dropout): 
+    def __init__(self, nfeat, nhid, dropout):
         super(GIN, self).__init__()
 
         self.mlp1 = nn.Sequential(
-            nn.Linear(nfeat, nhid), 
+            nn.Linear(nfeat, nhid),
             nn.ReLU(),
             nn.BatchNorm1d(nhid),
-            nn.Linear(nhid, nhid), 
+            nn.Linear(nhid, nhid),
         )
         self.conv1 = GINConv(self.mlp1)
 
@@ -351,13 +375,13 @@ class GIN(nn.Module):
             torch.nn.init.xavier_uniform_(m.weight.data)
             if m.bias is not None:
                 m.bias.data.fill_(0.0)
-        
-    def forward(self, x, edge_index): 
+
+    def forward(self, x, edge_index):
         x = self.conv1(x, edge_index)
         return x
 
 class SAGE(nn.Module):
-    def __init__(self, nfeat, nhid, dropout): 
+    def __init__(self, nfeat, nhid, dropout):
         super(SAGE, self).__init__()
         self.conv1 = SAGEConv(nfeat, nhid, normalize=True)
         self.conv1.aggr = 'mean'
@@ -378,7 +402,7 @@ class SAGE(nn.Module):
             if m.bias is not None:
                 m.bias.data.fill_(0.0)
 
-    def forward(self, x, edge_index): 
+    def forward(self, x, edge_index):
         x = self.conv1(x, edge_index)
         x = self.transition(x)
         x = self.conv2(x, edge_index)

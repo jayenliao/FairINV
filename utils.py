@@ -8,8 +8,14 @@ from scipy.spatial import distance_matrix
 import pandas as pd
 import os
 from torch.autograd import grad
-import json
+import json, random
 
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 def build_relationship(x, thresh=0.25):
     df_euclid = pd.DataFrame(1 / (1 + distance_matrix(x.T.T, x.T.T)), columns=x.T.columns, index=x.T.columns)
@@ -91,24 +97,37 @@ class Results:
     def save_results(self, args):
         for i in range(self.model_num):
             save_path = os.path.join(args.log_dir, f"{args.dataset}_{args.encoder}.json")
-            args_dict = vars(args)
-            del args_dict['device']
-            del args_dict['pbar']
+            args_dict = {k: (str(v) if isinstance(v, torch.device) else v) for k, v in vars(args).items()}
 
+            ret_dict = {
+                "AUC_mean": np.mean(self.auc[:, i]),
+                "AUC_std":  np.std(self.auc[:, i]),
+                "F1_mean":  np.mean(self.f1[:, i]),
+                "F1_std":   np.std(self.f1[:, i]),
+                "ACC_mean": np.mean(self.acc[:, i]),
+                "ACC_std":  np.std(self.acc[:, i]),
+                'SP_mean':  np.mean(self.parity[:, i]),
+                'SP_std':   np.std(self.parity[:, i]),
+                'EO_mean':  np.mean(self.equality[:, i]),
+                'EO_std':   np.std(self.equality[:, i])
+            }
+            ret_dict['name'] = f"{args.model}_" + args.dataset + f"_{args.encoder}" + f"_alpha:{args.alpha}" + f"_lr_sp:{args.lr_sp}" + f"_env_num:{args.env_num}" + f"_lr:{args.lr}"
+
+            output_dict = {"args": args_dict, "results": ret_dict}
             with open(save_path, 'w') as file:
-                json.dump(args_dict, file, indent=4)
-                file.write('\n')
+                json.dump(output_dict, file, indent=4)
 
-            with open(save_path, 'a') as file:
-                ret_dict = {"AUC": f"{np.around(np.mean(self.auc[:, i]) * 100, 2)} ± {np.around(np.std(self.auc[:, i]) * 100, 2)}",
-                            "F1": f"{np.around(np.mean(self.f1[:, i]) * 100, 2)} ± {np.around(np.std(self.f1[:, i]) * 100, 2)}",
-                            "ACC": f"{np.around(np.mean(self.acc[:, i]) * 100, 2)} ± {np.around(np.std(self.acc[:, i]) * 100, 2)}",
-                            'Parity': f'{np.around(np.mean(self.parity[:, i]) * 100, 2)} ± {np.around(np.std(self.parity[:, i]) * 100, 2)}',
-                            'Equality': f'{np.around(np.mean(self.equality[:, i]) * 100, 2)} ± {np.around(np.std(self.equality[:, i]) * 100, 2)}'
-                            }
-                json.dump(ret_dict, file, indent=4, ensure_ascii=False)
-            
-            ret_dict['name'] = "FairINV_" + args.dataset + f"_{args.encoder}" + f"_alpha:{args.alpha}" + f"_lr_sp:{args.lr_sp}" + f"_env_num:{args.env_num}" + f"_lr:{args.lr}"
-            with open('results.json', 'a') as file:
-                json.dump(ret_dict, file, indent=4, ensure_ascii=False)
-                file.write('\n')
+            # ret_dict_pretty = {
+            #     "AUC": f"{np.around(ret_dict['AUC_mean'] * 100, 2)} ± {np.around(ret_dict['AUC_std'] * 100, 2)}",
+            #     "F1": f"{np.around(ret_dict['F1_mean'] * 100, 2)} ± {np.around(ret_dict['F1_std'] * 100, 2)}",
+            #     "ACC": f"{np.around(ret_dict['ACC_mean'] * 100, 2)} ± {np.around(ret_dict['ACC_std'] * 100, 2)}",
+            #     'SP': f'{np.around(ret_dict["SP_mean"] * 100, 2)} ± {np.around(ret_dict["SP_std"] * 100, 2)}',
+            #     'EO': f'{np.around(ret_dict["EO_mean"] * 100, 2)} ± {np.around(ret_dict["EO_std"] * 100, 2)}'
+            # }
+            # for k, v in ret_dict_pretty.items():
+            #     print(f"{k:<5}: {v}")
+
+            # with open('results.json', 'a') as file:
+            #     json.dump(ret_dict, file, indent=4, ensure_ascii=False)
+            #     file.write('\n')
+
