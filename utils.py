@@ -1,14 +1,13 @@
 import torch
-import numpy as np
-import torch
 import torch.nn as nn
-from torch.nn.modules.loss import _Loss
-import scipy.sparse as sp
-from scipy.spatial import distance_matrix
+import numpy as np
 import pandas as pd
-import os
+import scipy.sparse as sp
+import os, json, random
+from torch.nn.modules.loss import _Loss
+from scipy.spatial import distance_matrix
 from torch.autograd import grad
-import json, random
+from sklearn.metrics import accuracy_score, roc_auc_score, f1_score
 
 def set_seed(seed):
     random.seed(seed)
@@ -78,6 +77,7 @@ class Results:
         self.model_num = model_num
         self.dataset = args.dataset
         self.model = args.model
+        self.encoder = args.encoder
         self.auc, self.f1, self.acc, self.parity, self.equality = np.zeros(shape=(self.seed_num, self.model_num)), \
                                                                   np.zeros(shape=(self.seed_num, self.model_num)), \
                                                                   np.zeros(shape=(self.seed_num, self.model_num)), \
@@ -86,18 +86,20 @@ class Results:
 
     def report_results(self):
         for i in range(self.model_num):
-            print(f"============" + f"{self.dataset}" + "+" + f"{self.model}" + "============")
-            print(f"AUCROC: {np.around(np.mean(self.auc[:, i]) * 100, 2)} ± {np.around(np.std(self.auc[:, i]) * 100, 2)}")
+            print(f"============ {self.dataset} + {self.model} ({self.encoder}) ============")
+            print(f"AUCROC:   {np.around(np.mean(self.auc[:, i]) * 100, 2)} ± {np.around(np.std(self.auc[:, i]) * 100, 2)}")
             print(f'F1-score: {np.around(np.mean(self.f1[:, i]) * 100, 2)} ± {np.around(np.std(self.f1[:, i]) * 100, 2)}')
-            print(f'ACC: {np.around(np.mean(self.acc[:, i]) * 100, 2)} ± {np.around(np.std(self.acc[:, i]) * 100, 2)}')
-            print(f'Parity: {np.around(np.mean(self.parity[:, i]) * 100, 2)} ± {np.around(np.std(self.parity[:, i]) * 100, 2)}')
+            print(f'ACC:      {np.around(np.mean(self.acc[:, i]) * 100, 2)} ± {np.around(np.std(self.acc[:, i]) * 100, 2)}')
+            print(f'Parity:   {np.around(np.mean(self.parity[:, i]) * 100, 2)} ± {np.around(np.std(self.parity[:, i]) * 100, 2)}')
             print(f'Equality: {np.around(np.mean(self.equality[:, i]) * 100, 2)} ± {np.around(np.std(self.equality[:, i]) * 100, 2)}')
             print("=================END=================")
 
     def save_results(self, args):
         for i in range(self.model_num):
-            save_path = os.path.join(args.log_dir, f"{args.dataset}_{args.encoder}.json")
+            if hasattr(args, 'pbar'):
+                del args.pbar
             args_dict = {k: (str(v) if isinstance(v, torch.device) else v) for k, v in vars(args).items()}
+            save_path = os.path.join(args.log_dir, f"results_among_{args.seed_num}_seeds.json")
 
             ret_dict = {
                 "AUC_mean": np.mean(self.auc[:, i]),
@@ -131,3 +133,13 @@ class Results:
             #     json.dump(ret_dict, file, indent=4, ensure_ascii=False)
             #     file.write('\n')
 
+def get_metrics(Y, logit, pred, idx, data):
+    auc = roc_auc_score(Y[idx].cpu(), logit[idx].cpu())
+    f1  = f1_score(Y[idx].cpu(), pred[idx].cpu())
+    acc = accuracy_score(Y[idx].cpu(), pred[idx].cpu())
+    dp, eo = fair_metric(
+        pred[idx].cpu().numpy(),
+        Y[idx].cpu().numpy(),
+        data.sens[idx].cpu().numpy()
+    )
+    return auc, f1, acc, dp, eo

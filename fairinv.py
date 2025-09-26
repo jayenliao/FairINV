@@ -17,7 +17,8 @@ from torch_geometric.loader import NeighborLoader
 from datetime import datetime
 from tensorboardX import SummaryWriter
 from sklearn.metrics import accuracy_score, roc_auc_score, f1_score
-from utils import EpochLogger, fair_metric
+from logger import EpochLogger
+from utils import fair_metric, get_metrics
 
 
 class LogWriter:
@@ -39,8 +40,10 @@ class FairINV(nn.Module):
         gnn_backbone = ConstructModel(args.in_dim, args.hid_dim, args.encoder, args.layer_num)
         self.gnn_backbone = gnn_backbone.to(args.device)
         self.classifier = nn.Linear(args.hid_dim, args.out_dim).to(args.device)
-        self.optimizer_infer = torch.optim.Adam(list(self.gnn_backbone.parameters())+list(self.classifier.parameters()),
-                                                lr=args.lr, weight_decay=args.weight_decay)
+        self.optimizer_infer = torch.optim.Adam(
+            list(self.gnn_backbone.parameters()) + list(self.classifier.parameters()),
+            lr=args.lr, weight_decay=args.weight_decay
+        )
 
         for m in self.modules():
             self.weights_init(m)
@@ -117,24 +120,30 @@ class FairINV(nn.Module):
                 emb_val = self.gnn_backbone(data.features, data.edge_index)
                 output_val = self.classifier(emb_val)
 
-            loss_cls_val = self.criterion_cls(output[data.idx_val], data.labels[data.idx_val].unsqueeze(1).float())
+            elog.log(epoch, "train", {'loss_cls': loss_cls_all, 'loss_irm': loss_irm_all, 'loss_all': loss_train.item()})
+
+            loss_cls_val = self.criterion_cls(output_val[data.idx_val], data.labels[data.idx_val].unsqueeze(1).float())
             pred = (output_val.squeeze() > 0).type_as(data.labels)
             # utility performance
-            auc_val = roc_auc_score(data.labels[data.idx_val].cpu(), output_val[data.idx_val].cpu())
-            f1_val = f1_score(data.labels[data.idx_val].cpu(), pred[data.idx_val].cpu())
-            acc_val = accuracy_score(data.labels[data.idx_val].cpu(), pred[data.idx_val].cpu())
-            # fairness performance
-            parity_val, equality_val = fair_metric(pred[data.idx_val].cpu().numpy(),
-                                                   data.labels[data.idx_val].cpu().numpy(),
-                                                   data.sens[data.idx_val].cpu().numpy())
+            auc_val, f1_val, acc_val, dp_val, eo_val = get_metrics(
+                Y=data.labels, logit=output_val, pred=pred, idx=data.idx_val, data=data
+            )
+            elog.log(epoch, "val", {
+                'loss_cls': loss_cls_val.item(),
+                'auc': auc_val,
+                'f1': f1_val,
+                'acc': acc_val,
+                'dp': dp_val,
+                'eo': eo_val}
+            )
 
             if self.args.dataset in ['pokec_z', 'pokec_n']:
                 if loss_cls_val.item() < best_loss:
                     best_loss = loss_cls_val.item()
                     torch.save(self.state_dict(), f'./weights/FairINV_{self.args.encoder}.pt')
             else:
-                if auc_val - parity_val - equality_val > best_result:
-                    best_result = auc_val - parity_val - equality_val
+                if auc_val - dp_val - eo_val > best_result:
+                    best_result = auc_val - dp_val - eo_val
                     torch.save(self.state_dict(), f'./weights/FairINV_{self.args.encoder}.pt')
 
             if 'writer' in locals():
@@ -143,7 +152,7 @@ class FairINV(nn.Module):
                                          'train/loss_all': loss_train}, step=epoch)
                 # log validation set performance
                 writer.record(loss_item={'val/auc': auc_val, 'val/f1': f1_val, 'val/acc': acc_val,
-                                         'val/dp': parity_val, 'val/eo': equality_val}, step=epoch)
+                                         'val/dp': dp_val, 'val/eo': eo_val}, step=epoch)
 
             if pbar is not None:
                 pbar.set_postfix({'loss_train': "{:.2f}".format(loss_train.item())})
@@ -151,6 +160,8 @@ class FairINV(nn.Module):
 
         if pbar is not None:
             pbar.close()
+
+        return elog
 
     def sens_partition(self, data, writer):
         ref_backbone, ref_classifier = self.train_ref_model(data, writer)
@@ -264,7 +275,7 @@ class IRMLoss(_Loss):
         return loss_penalty
 
 class ConstructModel(nn.Module):
-    def __init__(self, in_dim, hid_dim, encoder, layer_num):
+    def __init__(self, in_dim, hid_dim, encoder, layer_num, gat_heads=4, sgc_K=2):
         super(ConstructModel, self).__init__()
         self.encoder = encoder
 
@@ -280,24 +291,27 @@ class ConstructModel(nn.Module):
         elif encoder == 'sage':
             self.model = SAGE(nfeat=in_dim, nhid=hid_dim, dropout=0.5)
         elif encoder == 'gat':
-            # 2-layer GAT as a simple default
+            # Pattern: hidden layers concat=True (dim = heads*hid_dim), last layer concat=False (dim = hid_dim)
+            h = gat_heads
             self.model = nn.ModuleList()
             if layer_num == 1:
-                self.model.append(GATConv(in_dim, hid_dim, heads=4, dropout=0.5))
+                # single layer -> make output dim = hid_dim
+                self.model.append(GATConv(in_dim, hid_dim, heads=1, dropout=0.5, concat=False))
             else:
-                self.model.append(GATConv(in_dim, hid_dim, heads=4, dropout=0.5))
-                for _ in range(layer_num-2):
-                    self.model.append(GATConv(hid_dim, hid_dim, heads=4, dropout=0.5))
-                self.model.append(GATConv(hid_dim, hid_dim, heads=4, dropout=0.5))
+                # first layer
+                self.model.append(GATConv(in_dim, hid_dim, heads=h, dropout=0.5, concat=True))   # out: h*hid_dim
+                # middle layers (if any)
+                for _ in range(layer_num - 2):
+                    self.model.append(GATConv(hid_dim * h, hid_dim, heads=h, dropout=0.5, concat=True))  # out: h*hid_dim
+                # last layer -> concat=False so output dim is hid_dim (matches your classifier later)
+                self.model.append(GATConv(hid_dim * h, hid_dim, heads=1, dropout=0.5, concat=False))     # out: hid_dim
         elif encoder == 'sgc':
             # SGConv implements SGC (K-step propagation + linear)
             # We'll stack K via layer_num=1 and control hops by 'K' below;
             # or mimic SGC by chaining SGConv with K>1.
             self.model = nn.ModuleList()
             # Use K=2 as a sensible default; feel free to expose it as an arg.
-            K = 2
-            self.model.append(SGConv(in_dim, hid_dim, K=K, cached=False, add_self_loops=True))
-
+            self.model.append(SGConv(in_dim, hid_dim, K=sgc_K, cached=False, add_self_loops=True))
 
         for m in self.modules():
             self.weights_init(m)
@@ -309,18 +323,36 @@ class ConstructModel(nn.Module):
                 m.bias.data.fill_(0.0)
 
     def forward(self, x, edge_index, edge_weight=None):
-        if self.encoder in ['gcn', 'gin', 'sage', 'gat', 'sgc']:
+        if self.encoder == 'gcn':
             h = x
-            for i, layer in enumerate(self.model):
-                # PyG’s GCNConv/GINConv/SAGEConv/GATConv/SGConv all accept SparseTensor edge_index
-                # For GATConv/SGConv we won’t pass edge_weight unless you implement it explicitly.
-                if self.encoder == 'gcn':
-                    h = layer(h, edge_index, edge_weight=edge_weight)
-                elif self.encoder in ['gat', 'gin', 'sage', 'sgc']:
-                    h = layer(h, edge_index)
+            for i, conv in enumerate(self.model):
+                h = conv(h, edge_index, edge_weight=edge_weight)
+                if i != len(self.model) - 1:  # not the last layer
+                    h = F.relu(h)
             return h
+
+        elif self.encoder == 'gat':
+            h = x
+            for i, conv in enumerate(self.model):
+                h = conv(h, edge_index)
+                if i != len(self.model) - 1:
+                    h = F.relu(h)
+            return h
+
+        elif self.encoder == 'sgc':
+            h = x
+            for i, conv in enumerate(self.model):
+                h = conv(h, edge_index)
+                if i != len(self.model) - 1:
+                    h = F.relu(h)
+            return h
+
+        elif self.encoder in ['gin', 'sage']:
+            return self.model(x, edge_index)
+
         else:
             raise NotImplementedError
+
 
 class SAP(nn.Module):
     def __init__(self, in_dim, hid_dim, out_dim, encoder, layer_num):

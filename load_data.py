@@ -1,5 +1,7 @@
 import os
 import math
+import warnings
+warnings.filterwarnings('ignore')
 # import dgl
 import torch
 import random
@@ -290,7 +292,7 @@ def load_german(dataset, sens_attr="Gender", predict_attr="GoodCustomer", path="
     # Sensitive Attribute
     idx_features_labels['Gender'][idx_features_labels['Gender'] == 'Female'] = 1
     idx_features_labels['Gender'][idx_features_labels['Gender'] == 'Male'] = 0
-   
+
     # build relationship
     if os.path.exists(f'{path}/{dataset}_edges.txt'):
         edges_unordered = np.genfromtxt(f'{path}/{dataset}_edges.txt').astype('int')

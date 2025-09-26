@@ -1,32 +1,18 @@
-# %%
-# import dgl
-import ipdb
-import time
+import ipdb, time, random, os
 import argparse
 import numpy as np
-
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-
-from tqdm import tqdm
-
-import warnings
 from torch_geometric.loader import DataLoader
-from datetime import datetime
-
-warnings.filterwarnings('ignore')
-
-from load_data import *
-# from models import *
-from utils import set_seed
-import torch.nn as nn
 from torch_sparse import SparseTensor
-from sklearn.metrics import accuracy_score, roc_auc_score, f1_score
-from fairinv import *
+from tqdm import tqdm
+from datetime import datetime
+from load_data import FairDataset
+from utils import Results, set_seed, get_metrics
+from fairinv import FairINV, ConstructModel, fair_metric
 from logger import EpochLogger
-import json
-
 
 def args_parser():
     parser = argparse.ArgumentParser()
@@ -101,7 +87,7 @@ def run_fairinv(args):
     """
     Train model
     """
-    fairinv.train_model(data, pbar=args.pbar)
+    elog = fairinv.train_model(data, pbar=args.pbar)
 
     """
     evaluation
@@ -110,20 +96,31 @@ def run_fairinv(args):
     fairinv.eval()
     with torch.no_grad():
         output = fairinv(data.features, data.edge_index)
-
     pred = (output.squeeze() > 0).type_as(data.labels)
-    # utility performance
-    auc_test = roc_auc_score(data.labels[data.idx_test].cpu(), output[data.idx_test].cpu())
-    f1_test = f1_score(data.labels[data.idx_test].cpu(), pred[data.idx_test].cpu())
-    acc_test = accuracy_score(data.labels[data.idx_test].cpu(), pred[data.idx_test].cpu())
-    # fairness performance
-    parity_test, equality_test = fair_metric(pred[data.idx_test].cpu().numpy(),
-                                             data.labels[data.idx_test].cpu().numpy(),
-                                             data.sens[data.idx_test].cpu().numpy())
+    auc_test, f1_test, acc_test, dp_test, eo_test = get_metrics(
+        Y=data.labels,
+        logit=output,
+        pred=pred,
+        idx=data.idx_test,
+        data=data
+    )
+    metrics_test = {
+        'auc': auc_test,
+        'f1': f1_test,
+        'acc': acc_test,
+        'dp': dp_test,
+        'eo': eo_test
+    }
+    print("[TEST]", end=' ')
+    for m, v in metrics_test.items():
+        print(f"{m.upper():3}: {v:.4f}", end='  ')
+    print()
+    elog.log(args.epochs, "test", metrics_test)
+    elog.close()
 
-    return auc_test, f1_test, acc_test, parity_test, equality_test
+    return auc_test, f1_test, acc_test, dp_test, eo_test
 
-def run_vanilla(args):
+def run_vanilla(args, seed_dir):
     args = args_parser()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -146,9 +143,11 @@ def run_vanilla(args):
 
     pbar = tqdm(range(args.epochs), desc=f"{args.dataset}-{args.encoder}")
     best = {'score': -1e9, 'state': None}
-    elog = EpochLogger(args.seed_dir)
+    elog = EpochLogger(seed_dir)
+
     for ep in pbar:
-        backbone.train(); clf.train()
+        backbone.train()
+        clf.train()
         opt.zero_grad()
         H = backbone(X, EI)          # [N, hid]
         logits = clf(H).squeeze(1)   # [N]
@@ -163,12 +162,9 @@ def run_vanilla(args):
             loss_val = loss_fn(logit_val[idx_va], Y[idx_va].float()).item()
         pred_val = (logit_val > 0).long()
 
-        auc = roc_auc_score(Y[idx_va].cpu(), logit_val[idx_va].cpu())
-        f1  = f1_score(Y[idx_va].cpu(), pred_val[idx_va].cpu())
-        acc = accuracy_score(Y[idx_va].cpu(), pred_val[idx_va].cpu())
-        dp, eo = fair_metric(pred_val[idx_va].cpu().numpy(),
-                             Y[idx_va].cpu().numpy(),
-                             data.sens[idx_va].cpu().numpy())
+        auc, f1, acc, dp, eo = get_metrics(
+            Y, logit_val, pred=pred_val, idx=idx_va, data=data
+        )
 
         score = auc - dp - eo
         if score > best['score']:
@@ -200,30 +196,28 @@ def run_vanilla(args):
         logit_t = clf(Ht).squeeze(1)
     pred_t = (logit_t > 0).long()
 
-    auc_t = roc_auc_score(Y[idx_te].cpu(), logit_t[idx_te].cpu())
-    f1_t  = f1_score(Y[idx_te].cpu(), pred_t[idx_te].cpu())
-    acc_t = accuracy_score(Y[idx_te].cpu(), pred_t[idx_te].cpu())
-    dp_t, eo_t = fair_metric(pred_t[idx_te].cpu().numpy(),
-                             Y[idx_te].cpu().numpy(),
-                             data.sens[idx_te].cpu().numpy())
+    auc_test, f1_test, acc_test, dp_test, eo_test = get_metrics(
+        Y, logit_t, pred=pred_t, idx=idx_te, data=data
+    )
     metrics_test = {
-        'auc_test': auc_t,
-        'f1_test': f1_t,
-        'acc_test': acc_t,
-        'dp_test': dp_t,
-        'eo_test': eo_t
+        'auc_test': auc_test,
+        'f1_test': f1_test,
+        'acc_test': acc_test,
+        'dp_test': dp_test,
+        'eo_test': eo_test
     }
     elog.log(args.epochs, "test", metrics_test)
+    elog.close()
 
-    print(f"[TEST] AUC: {auc_t:.4f}  F1: {f1_t:.4f}  ACC: {acc_t:.4f}  DP: {dp_t:.4f}  EO: {eo_t:.4f}")
+    print(f"[TEST] AUC: {auc_test:.4f}  F1: {f1_test:.4f}  ACC: {acc_test:.4f}  DP: {dp_test:.4f}  EO: {eo_test:.4f}")
 
-    return auc_t, f1_t, acc_t, dp_t, eo_t
+    return auc_test, f1_test, acc_test, dp_test, eo_test
 
 def main(args):
     model_num = 1
     results = Results(args.seed_num, model_num, args)
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    dir_name = f'{args.model}_{args.dataset}_{ts}'
+    dir_name = f'{args.dataset}/{args.encoder}/{args.model}/{ts}'
     args.log_dir = os.path.join(args.log_dir, dir_name)
 
     for s in range(args.seed_num):
@@ -232,12 +226,11 @@ def main(args):
         args.seed_dir = os.path.join(args.log_dir, f'seed_{seed}')
         os.makedirs(args.seed_dir, exist_ok=True)
 
-        print(f"Seed={seed}")
         if args.model == "fairinv":
-            args.pbar = tqdm(total=args.epochs, desc=f"Seed {seed + 1}", unit="epoch", bar_format="{l_bar}{bar:30}{r_bar}")
+            args.pbar = tqdm(total=args.epochs, desc=f"Seed {seed}", unit="epoch", bar_format="{l_bar}{bar:30}{r_bar}")
             auc, f1, acc, dp, eo = run_fairinv(args)
         elif args.model == "vanilla":
-            auc, f1, acc, dp, eo = run_vanilla(args)
+            auc, f1, acc, dp, eo = run_vanilla(args, args.seed_dir)
         else:
             raise ValueError("Invalid mode. Choose 'fairinv' or 'vanilla'.")
         results.auc[s, :], results.f1[s, :], results.acc[s, :], \
