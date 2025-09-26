@@ -211,6 +211,7 @@ def main(args):
 
     data = FairDataset(args.dataset, args.device)
     data.load_data()
+    data.info()
 
     for s in range(args.seed_num):
         seed = s + args.start_seed

@@ -140,6 +140,17 @@ class FairDataset:
         (self.edge_index, self.edge_index_nor, self.features, self.labels, self.idx_train, self.idx_val, self.idx_test,
          self.sens) = (edge_index_spar, edge_index, features, labels, idx_train, idx_val, idx_test, sens)
 
+    def info(self):
+        print('====================Data Information====================')
+        print('Dataset: {}'.format(self.dataset))
+        print('# Nodes: {}'.format(self.features.shape[0]))
+        print('# Edges: {}'.format(self.edge_index.nnz()))
+        print('# Features: {}'.format(self.features.shape[1]))
+        print('# Classes: {}'.format(int(self.labels.max()) + 1))
+        print('# Train samples: {}'.format(len(self.idx_train)))
+        print('# Val samples: {}'.format(len(self.idx_val)))
+        print('# Test samples: {}'.format(len(self.idx_test)))
+        print('========================================================')
 
 def load_pokec(dataset, sens_attr, predict_attr, path="./Dataset/pokec/", label_number=1000, sens_number=500,
                seed=19, split_ratio=None, val_idx=True):
