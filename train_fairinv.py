@@ -65,14 +65,8 @@ def set_seed(seed):
     torch.backends.cudnn.allow_tf32 = False
 
 
-def run_fairinv(args):
+def run_fairinv(args, data):
     torch.set_printoptions(threshold=float('inf'))
-    """
-    Load data
-    """
-    data = FairDataset(args.dataset, args.device)
-    data.load_data()
-
     num_class = 1
     args.in_dim = data.features.shape[1]
     args.nnode = data.features.shape[0]
@@ -120,13 +114,8 @@ def run_fairinv(args):
 
     return auc_test, f1_test, acc_test, dp_test, eo_test
 
-def run_vanilla(args, seed_dir):
-    args = args_parser()
+def run_vanilla(args, data, seed_dir):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    # --- Load data (outputs PyG SparseTensor edge_index as data.edge_index) ---
-    data = FairDataset(args.dataset, device)
-    data.load_data()  # uses your loaders and sets .features/.labels/.sens/.idx_*
     X = data.features
     Y = data.labels
     EI = data.edge_index   # SparseTensor
@@ -220,6 +209,9 @@ def main(args):
     dir_name = f'{args.dataset}/{args.encoder}/{args.model}/{ts}'
     args.log_dir = os.path.join(args.log_dir, dir_name)
 
+    data = FairDataset(args.dataset, args.device)
+    data.load_data()
+
     for s in range(args.seed_num):
         seed = s + args.start_seed
         set_seed(seed)
@@ -228,9 +220,9 @@ def main(args):
 
         if args.model == "fairinv":
             args.pbar = tqdm(total=args.epochs, desc=f"Seed {seed}", unit="epoch", bar_format="{l_bar}{bar:30}{r_bar}")
-            auc, f1, acc, dp, eo = run_fairinv(args)
+            auc, f1, acc, dp, eo = run_fairinv(args, data)
         elif args.model == "vanilla":
-            auc, f1, acc, dp, eo = run_vanilla(args, args.seed_dir)
+            auc, f1, acc, dp, eo = run_vanilla(args, data, args.seed_dir)
         else:
             raise ValueError("Invalid mode. Choose 'fairinv' or 'vanilla'.")
         results.auc[s, :], results.f1[s, :], results.acc[s, :], \
