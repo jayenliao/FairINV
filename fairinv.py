@@ -155,7 +155,15 @@ class FairINV(nn.Module):
                                          'val/dp': dp_val, 'val/eo': eo_val}, step=epoch)
 
             if pbar is not None:
-                pbar.set_postfix({'loss_train': "{:.2f}".format(loss_train.item())})
+                pbar.set_postfix({
+                    "loss_train": f"{loss_train.item():.3f}",
+                    "loss": f"{loss_cls_val.item():.3f}",
+                    "auc": f"{auc_val:.4f}",
+                    "f1": f"{f1_val:.4f}",
+                    "acc": f"{acc_val:.4f}",
+                    "dp": f"{dp_val:.4f}",
+                    "eo": f"{eo_val:.4f}"
+                })
                 pbar.update(1)
 
         if pbar is not None:
