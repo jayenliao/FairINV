@@ -1,25 +1,12 @@
-import time
-
-import comet_ml
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.modules.loss import _Loss
 from torch.autograd import grad
-from torch.autograd import Function
-import torch.distributed as dist
-import os
-from torch_geometric.nn import GCNConv, GINConv, SAGEConv, GATConv, SGConv, GraphConv, global_mean_pool
-from torch.optim.lr_scheduler import MultiStepLR
-import math
-from torch_geometric.data import Data
-from torch_geometric.loader import NeighborLoader
-from datetime import datetime
+from torch_geometric.nn import GCNConv, GINConv, SAGEConv, GATConv, SGConv
 from tensorboardX import SummaryWriter
-from sklearn.metrics import accuracy_score, roc_auc_score, f1_score
 from logger import EpochLogger
-from utils import fair_metric, get_metrics
-
+from utils import get_metrics
 
 class LogWriter:
     def __init__(self, logdir='./logs'):
@@ -28,7 +15,6 @@ class LogWriter:
     def record(self, loss_item: dict, step: int):
         for key, value in loss_item.items():
             self.writer.add_scalar(key, value, step)
-
 
 class FairINV(nn.Module):
     def __init__(self, args):

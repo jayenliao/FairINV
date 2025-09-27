@@ -1,20 +1,13 @@
 import os
-import math
 import warnings
 warnings.filterwarnings('ignore')
-# import dgl
 import torch
-import random
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
-from utils import *
-from torch_geometric.utils import dropout_adj, convert
+from torch_geometric.utils import convert
 from torch_sparse import SparseTensor
-import torch.nn as nn
-import networkx as nx
-from multiprocessing import Pool
-
+from utils import feature_norm, build_relationship
 
 class FairDataset:
     def __init__(self, dataset, device):

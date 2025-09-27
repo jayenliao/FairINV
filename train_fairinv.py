@@ -10,9 +10,9 @@ from torch_sparse import SparseTensor
 from tqdm import tqdm
 from datetime import datetime
 from args import get_args
-from load_data import FairDataset
+from data import FairDataset
 from utils import Results, set_seed, get_metrics
-from fairinv import FairINV, ConstructModel, fair_metric
+from models import FairINV, ConstructModel
 from logger import EpochLogger
 
 def set_seed(seed):
