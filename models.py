@@ -4,9 +4,42 @@ import torch.nn.functional as F
 from torch.nn.modules.loss import _Loss
 from torch.autograd import grad
 from torch_geometric.nn import GCNConv, GINConv, SAGEConv, GATConv, SGConv
+from torch_sparse import SparseTensor
 from tensorboardX import SummaryWriter
 from logger import EpochLogger
 from utils import get_metrics
+
+class EdgeAdder(nn.Module):
+    """
+    Learnable soft edges over a fixed candidate set of cross-group pairs.
+    Build once, optimize jointly with the GNN.
+    """
+    def __init__(self, num_nodes: int, cand_pairs_ij: torch.LongTensor,
+                 init_w: torch.Tensor | None = None, device="cuda"):
+        super().__init__()
+        self.N = num_nodes
+        # cand_pairs_ij: LongTensor [2, M] of undirected pairs (i,j), i!=j, i<->j not duplicated
+        self.register_buffer("cij", cand_pairs_ij)  # [2, M]
+        M = cand_pairs_ij.shape[1]
+        if init_w is None:
+            theta0 = torch.full((M,), -2.5)  # sigmoid(-2.5) ~ 0.075 initial weight
+        else:
+            # map similarity s∈[0,1] roughly to logits in [-2.5,2.5]
+            theta0 = torch.clamp((init_w - 0.5) * 10.0, -2.5, 2.5)
+        self.theta = nn.Parameter(theta0.to(device))
+
+    def weights(self):
+        return torch.sigmoid(self.theta)  # (M,)
+
+    def sparse_tensor(self) -> SparseTensor:
+        """Undirected SparseTensor with values=weights for both (i,j) and (j,i)."""
+        i, j = self.cij[0], self.cij[1]
+        w = self.weights()
+        row = torch.cat([i, j], dim=0)
+        col = torch.cat([j, i], dim=0)
+        val = torch.cat([w, w], dim=0)
+        return SparseTensor(row=row, col=col, value=val,
+                            sparse_sizes=(self.N, self.N)).coalesce()
 
 class LogWriter:
     def __init__(self, logdir='./logs'):

@@ -3,7 +3,7 @@ import torch
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', choices=['fairinv','vanilla'], default='vanilla')
+    parser.add_argument('--model', choices=['fairinv', 'vanilla', 'edge_adder'], default='vanilla')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='Disables CUDA training.')
     parser.add_argument('--start_seed', type=int, default=42, help='Random seed start.')
@@ -31,6 +31,11 @@ def get_args():
     parser.add_argument('--log_interval', type=int, default=20, help='Interval for logging.')
     parser.add_argument('--partition_times', type=int, default=3,
                         help='the number for partitioning the sensitive attribute group.')
+
+    # edge adder specific
+    parser.add_argument('--edge_k', type=int, default=2, help='#cross-group candidates per node.')
+    parser.add_argument('--lambda_dp', type=float, default=0.1, help='Weight for soft demographic parity loss.')
+    parser.add_argument('--lambda_edge_l1', type=float, default=1e-4, help='L1 sparsity on learnable edges.')
 
     args = parser.parse_known_args()[0]
     args.cuda = not args.no_cuda and torch.cuda.is_available()
