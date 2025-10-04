@@ -136,7 +136,7 @@ def run(args, data, seed_dir):
     loss_fn = nn.BCEWithLogitsLoss()
     pbar = tqdm(range(args.epochs), desc=f"{args.dataset}-{args.encoder}")
     best = {'score': -1e9, 'state': None}
-    elog = EpochLogger(seed_dir)
+    elog = EpochLogger(seed_dir, model=args.model)
 
     for ep in pbar:
         backbone.train()
@@ -151,21 +151,21 @@ def run(args, data, seed_dir):
         H = backbone(X, A_blend)          # [N, hid]
         logits = clf(H).squeeze(1)        # [N]
         probs  = torch.sigmoid(logits)
-        bce = loss_fn(logits[idx_tr], Y[idx_tr].float())
+        loss_bce = loss_fn(logits[idx_tr], Y[idx_tr].float())
 
         if edge_adder is not None:
             s_tr = data.sens[idx_tr].long()
             if (s_tr == 0).any() and (s_tr == 1).any():
                 p0 = probs[idx_tr][s_tr == 0].mean()
                 p1 = probs[idx_tr][s_tr == 1].mean()
-                dp_loss = (p0 - p1).pow(2)
+                loss_dp = (p0 - p1).pow(2)
             else:
                 raise ValueError("Only one sensitive group present in training data.")
             l1 = edge_adder.weights().abs().sum() if edge_adder is not None else torch.zeros((), device=device)
-            loss = bce + args.lambda_dp * dp_loss + args.lambda_edge_l1 * l1
+            loss = loss_bce + args.lambda_dp * loss_dp + args.lambda_edge_l1 * l1
         else:
-            loss = bce
-            dp_loss, l1 = None, None
+            loss = loss_bce
+            loss_dp, l1 = None, None
 
         # --- Train metrics & logging ---
         with torch.no_grad():
@@ -175,9 +175,9 @@ def run(args, data, seed_dir):
             )
             metrics_train = {
                 # losses (train)
-                "loss": float(loss.item()),
-                "bce": float(bce.item()),
-                "dp_loss": float(dp_loss.item()) if dp_loss is not None else None,
+                "loss_all": float(loss.item()),
+                "loss_bce": float(loss_bce.item()),
+                "loss_dp": float(loss_dp.item()) if loss_dp is not None else None,
                 "l1": float(l1.item()) if l1 is not None else None,
                 # metrics (train)
                 "auc": auc_tr,
@@ -197,7 +197,7 @@ def run(args, data, seed_dir):
         with torch.no_grad():
             H_val = backbone(X, A_blend)
             logit_val = clf(H_val).squeeze(1)
-            bce_val = loss_fn(logit_val[idx_va], Y[idx_va].float())
+            loss_bce_val = loss_fn(logit_val[idx_va], Y[idx_va].float())
             probs_val = torch.sigmoid(logit_val)
             # DP loss on VAL (only when edge_adder is active)
             if edge_adder is not None:
@@ -205,15 +205,15 @@ def run(args, data, seed_dir):
                 if (s_va == 0).any() and (s_va == 1).any():
                     pv0 = probs_val[idx_va][s_va == 0].mean()
                     pv1 = probs_val[idx_va][s_va == 1].mean()
-                    dp_loss_val = (pv0 - pv1).pow(2)
+                    loss_dp_val = (pv0 - pv1).pow(2)
                 else:
-                    dp_loss_val = torch.tensor(0.0, device=device)
+                    loss_dp_val = torch.tensor(0.0, device=device)
                 l1_val = l1  # same parameter regularizer; log under val for completeness
-                loss_val_total = bce_val + args.lambda_dp * dp_loss_val + args.lambda_edge_l1 * l1_val
+                loss_val_total = loss_bce_val + args.lambda_dp * loss_dp_val + args.lambda_edge_l1 * l1_val
             else:
-                dp_loss_val = None
+                loss_dp_val = None
                 l1_val = None
-                loss_val_total = bce_val
+                loss_val_total = loss_bce_val
 
         pred_val = (logit_val > 0).long()
         auc, f1, acc, dp, eo = get_metrics(
@@ -230,21 +230,21 @@ def run(args, data, seed_dir):
 
         metrics_val = {
             # losses (val)
-            'loss_val': float(loss_val_total.item()),
-            'bce_val': float(bce_val.item()),
-            'dp_loss_val': float(dp_loss_val.item()) if dp_loss_val is not None else None,
-            'l1_val': float(l1_val.item()) if l1_val is not None and torch.is_tensor(l1_val) else (float(l1_val) if l1_val is not None else None),
+            'loss_all': float(loss_val_total.item()),
+            'loss_bce': float(loss_bce_val.item()),
+            'loss_dp': float(loss_dp_val.item()) if loss_dp_val is not None else None,
+            'l1': float(l1_val.item()) if l1_val is not None and torch.is_tensor(l1_val) else (float(l1_val) if l1_val is not None else None),
             # metrics (val)
-            'auc_val': auc,
-            'f1_val': f1,
-            'acc_val': acc,
-            'dp_val': dp,
-            'eo_val': eo
+            'auc': auc,
+            'f1': f1,
+            'acc': acc,
+            'dp': dp,
+            'eo': eo
         }
         elog.log(ep, "val", metrics_val)
 
-        if edge_adder is not None and dp_loss is not None and l1 is not None:
-            message = f"loss: {loss.item():.3f}, bce: {bce.item():.3f}, dp_loss: {dp_loss.item():.3f}, l1: {l1.item():.3f}"
+        if edge_adder is not None and loss_dp is not None and l1 is not None:
+            message = f"loss: {loss.item():.3f}, bce: {loss_bce.item():.3f}, loss_dp: {loss_dp.item():.3f}, l1: {l1.item():.3f}"
             message += f", auc: {auc:.3f}, f1: {f1:.3f}, acc: {acc:.3f}, dp: {dp:.3f}, eo: {eo:.3f}"
         else:
             message = f"loss(bce): {loss.item():.3f}"
@@ -267,11 +267,11 @@ def run(args, data, seed_dir):
         Y, logit_t, pred=pred_t, idx=idx_te, data=data
     )
     metrics_test = {
-        'auc_test': auc_test,
-        'f1_test': f1_test,
-        'acc_test': acc_test,
-        'dp_test': dp_test,
-        'eo_test': eo_test
+        'auc': auc_test,
+        'f1': f1_test,
+        'acc': acc_test,
+        'dp': dp_test,
+        'eo': eo_test
     }
     elog.log(args.epochs, "test", metrics_test)
     elog.close()

@@ -108,10 +108,9 @@ class FairINV(nn.Module):
             part_mat_list.append(part_mat[data.idx_train])
             edge_weight_inv_list.append(edge_weight_inv)
 
-        elog = EpochLogger(self.args.seed_dir)
+        elog = EpochLogger(self.args.seed_dir, model=self.args.model)
         for epoch in range(self.args.epochs):
             loss_log_list = []
-            loss_cls_all, loss_irm_all = 0, 0
 
             self.gnn_backbone.train()
             self.classifier.train()
@@ -144,6 +143,8 @@ class FairINV(nn.Module):
 
             loss_log_cat = torch.cat(loss_log_list, dim=0)
             Var, Mean = torch.var_mean(loss_log_cat)
+            loss_irm_all = float(Var.item())      # penalty term (IRM-like)
+            loss_cls_all = float(Mean.item())     # utility term (mean subgroup BCE)
             loss_train = Var + self.args.alpha * Mean
             loss_train.backward()
             self.optimizer_infer.step()
@@ -151,25 +152,42 @@ class FairINV(nn.Module):
             self.gnn_backbone.eval()
             self.classifier.eval()
             with torch.no_grad():
-                emb_val = self.gnn_backbone(data.features, data.edge_index)
-                output_val = self.classifier(emb_val)
+                emb_all = self.gnn_backbone(data.features, data.edge_index)
+                output_all = self.classifier(emb_all)
+                pred_all = (output_all.squeeze() > 0).type_as(data.labels)
 
-            elog.log(epoch, "train", {'loss_cls': loss_cls_all, 'loss_irm': loss_irm_all, 'loss_all': loss_train.item()})
+            auc_tr, f1_tr, acc_tr, dp_tr, eo_tr = get_metrics(
+                Y=data.labels, logit=output_all, pred=pred_all, idx=data.idx_train, data=data
+            )
 
-            loss_cls_val = self.criterion_cls(output_val[data.idx_val], data.labels[data.idx_val].unsqueeze(1).float())
-            pred = (output_val.squeeze() > 0).type_as(data.labels)
+            elog.log(epoch, "train", {
+                'loss_irm': loss_irm_all,
+                'loss_cls_all': loss_cls_all,
+                'loss_all': loss_train.item(),
+                'auc': auc_tr,
+                'f1': f1_tr,
+                'acc': acc_tr,
+                'dp': dp_tr,
+                'eo': eo_tr,
+            })
+
+            loss_cls_val = self.criterion_cls(output_all[data.idx_val], data.labels[data.idx_val].unsqueeze(1).float())
+
             # utility performance
             auc_val, f1_val, acc_val, dp_val, eo_val = get_metrics(
-                Y=data.labels, logit=output_val, pred=pred, idx=data.idx_val, data=data
+                Y=data.labels, logit=output_all, pred=pred_all, idx=data.idx_val, data=data
             )
             elog.log(epoch, "val", {
+                'loss_all': loss_train.item(),
                 'loss_cls': loss_cls_val.item(),
+                'loss_irm': loss_irm_all,
+                'loss_cls_all': loss_cls_all,
                 'auc': auc_val,
                 'f1': f1_val,
                 'acc': acc_val,
                 'dp': dp_val,
-                'eo': eo_val}
-            )
+                'eo': eo_val
+            })
 
             if self.args.dataset in ['pokec_z', 'pokec_n']:
                 if loss_cls_val.item() < best_loss:
@@ -246,7 +264,7 @@ class FairINV(nn.Module):
             soft_split_final, edge_weight_inv = partition_module(emb_cat.detach(), data.features, data.edge_index, data.labels)
         return soft_split_final, edge_weight_inv # return partition matrix P_i and (1 - edge weights)
 
-    def train_ref_model(self, data, writer=None):
+    def train_ref_model(self, data, writer):
 
         # Lower phi: reference model to obtain node embeddings for partitioning
         ref_backbone = ConstructModel(self.args.in_dim, self.args.hid_dim, self.args.encoder,
