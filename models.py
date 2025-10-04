@@ -56,9 +56,12 @@ class FairINV(nn.Module):
         self.hid_dim = args.hid_dim
         self.out_dim = args.out_dim
         self.args = args
-        gnn_backbone = ConstructModel(args.in_dim, args.hid_dim, args.encoder, args.layer_num)
-        self.gnn_backbone = gnn_backbone.to(args.device)
+
+        # Construct GNN backbone (upper phi) and classifier (g)
+        self.gnn_backbone = ConstructModel(args.in_dim, args.hid_dim, args.encoder, args.layer_num)
+        self.gnn_backbone = self.gnn_backbone.to(args.device)
         self.classifier = nn.Linear(args.hid_dim, args.out_dim).to(args.device)
+
         self.optimizer_infer = torch.optim.Adam(
             list(self.gnn_backbone.parameters()) + list(self.classifier.parameters()),
             lr=args.lr, weight_decay=args.weight_decay
@@ -78,6 +81,17 @@ class FairINV(nn.Module):
                 m.bias.data.fill_(0.0)
 
     def train_model(self, data, **kwargs):
+        """
+        Train FairINV model
+        :param data: input graph data
+        :param kwargs: pbar (tqdm progress bar)
+        :return: elog (epoch logger)
+
+        This method calls:
+            - self.sens_partition() to obtain the top-k worst-case sensitive attribute partitions, it calls:
+                - self.train_ref_model() to pre-train a reference model for partitioning
+
+        """
         best_loss = 100
         best_result = 0
         pbar = kwargs.get('pbar', None)
@@ -88,6 +102,7 @@ class FairINV(nn.Module):
         else:
             raise Warning("No log directory is specified!")
 
+        # partition sensitive attributes k times to identify the top-k worst-case partitions
         for i in range(self.args.partition_times):
             part_mat, edge_weight_inv = self.sens_partition(data, writer)
             part_mat_list.append(part_mat[data.idx_train])
@@ -196,26 +211,29 @@ class FairINV(nn.Module):
         partition_module = SAP(in_dim=self.in_dim, hid_dim=self.hid_dim, out_dim=self.args.env_num, encoder=self.args.encoder, layer_num=self.args.layer_num).to(self.args.device)
         optimizer_part_mat = torch.optim.Adam(list(partition_module.parameters()), lr=self.args.lr_sp, weight_decay=1e-5)
 
-        emb = ref_backbone(data.features, data.edge_index)
-        logits = ref_classifier(emb)
+        emb = ref_backbone(data.features, data.edge_index) # Obtain h_v
+        logits = ref_classifier(emb)                       # Obtain sigmoid(w^T h_v) to compute lower phi's loss
         scale = torch.tensor(1.).cuda().requires_grad_()
-        error = self.criterion_env(logits[data.idx_train]*scale,
+        error = self.criterion_env(logits[data.idx_train]*scale, # BCE loss
                                    data.labels[data.idx_train].unsqueeze(1).float())
 
-        emb_cat = torch.cat([emb[data.edge_index.storage._row], emb[data.edge_index.storage._col]], dim=1)
+        emb_cat = torch.cat([emb[data.edge_index.storage._row], emb[data.edge_index.storage._col]], dim=1) # Concat [h_u, h_v]
 
+        # Train SAP module to obtain the sensitive attribute partition (SAP) matrix
         for epoch in range(500):
             loss_penalty_list = []
             partition_module.train()
             optimizer_part_mat.zero_grad()
 
+            # Feed concatenated embeddings [h_u, h_v] into SAP to obtain the soft partition matrix P_i
+            # Compute
             part_mat, edge_weight_inv = partition_module(emb_cat.detach(), data.features, data.edge_index, data.labels)
             for env_idx in range(self.args.env_num):
                 loss_weight = part_mat[:, env_idx]
                 penalty_grad = grad((error.squeeze(1) * loss_weight[data.idx_train]).mean(), [scale], create_graph=True)[0].pow(2).mean()
                 loss_penalty_list.append(penalty_grad)
 
-            risk_final = -torch.stack(loss_penalty_list).sum()
+            risk_final = -torch.stack(loss_penalty_list).sum() # Take negative to maximize the loss
             risk_final.backward(retain_graph=True)
             optimizer_part_mat.step()
 
@@ -225,10 +243,11 @@ class FairINV(nn.Module):
 
         with torch.no_grad():
             soft_split_final, edge_weight_inv = partition_module(emb_cat.detach(), data.features, data.edge_index, data.labels)
-        return soft_split_final, edge_weight_inv
+        return soft_split_final, edge_weight_inv # return partition matrix P_i and (1 - edge weights)
 
     def train_ref_model(self, data, writer=None):
 
+        # Lower phi: reference model to obtain node embeddings for partitioning
         ref_backbone = ConstructModel(self.args.in_dim, self.args.hid_dim, self.args.encoder,
                                        self.args.layer_num).to(self.args.device)
         ref_classifier = nn.Linear(self.args.hid_dim, self.args.out_dim).to(self.args.device)
@@ -384,11 +403,14 @@ class ConstructModel(nn.Module):
 class SAP(nn.Module):
     def __init__(self, in_dim, hid_dim, out_dim, encoder, layer_num):
         super(SAP, self).__init__()
+
+        # ψ (psi): edge-variant scorer
         self.variant_infer = nn.Sequential(
             nn.Linear(in_features=2*hid_dim, out_features=1),
             nn.Sigmoid()
         )
 
+        # Here is q (sensitive-attribute inference)
         self.sens_infer_backbone = ConstructModel(in_dim, hid_dim, encoder=encoder, layer_num=layer_num)
         self.sens_infer_classifier = nn.Sequential(
             nn.Linear(in_features=hid_dim+1, out_features=out_dim),
@@ -405,13 +427,13 @@ class SAP(nn.Module):
                 m.bias.data.fill_(0.0)
 
     def forward(self, emb_cat, features, edge_index, labels):
-        edge_weight_variant = self.variant_infer(emb_cat)
+        edge_weight_variant = self.variant_infer(emb_cat)   # Obtain (1 - edge weights) from edge-variant scorer (psi)
         edge_weight_variant = edge_weight_variant.squeeze()
         edge_index = edge_index.fill_value(1., dtype=None)
         edge_index.storage.set_value_(edge_index.storage.value() * edge_weight_variant.to(edge_index.device()))
-        h = self.sens_infer_backbone(features, edge_index)
+        h = self.sens_infer_backbone(features, edge_index)  # Obtain (p_i) from sensitive-attribute inference (q)
         sens_attr_partition = self.sens_infer_classifier(torch.cat([h, labels.unsqueeze(1)], dim=1))
-        return sens_attr_partition, 1-edge_weight_variant
+        return sens_attr_partition, 1 - edge_weight_variant
 
 
 class GIN(nn.Module):
