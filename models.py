@@ -71,7 +71,7 @@ class FairINV(nn.Module):
             self.weights_init(m)
 
         self.criterion_cls = nn.BCEWithLogitsLoss()
-        self.criterion_irm = IRMLoss()
+        # self.criterion_irm = IRMLoss()
         self.criterion_env = nn.BCEWithLogitsLoss(reduction='none')
 
     def weights_init(self, m):
@@ -217,7 +217,8 @@ class FairINV(nn.Module):
         error = self.criterion_env(logits[data.idx_train]*scale, # BCE loss
                                    data.labels[data.idx_train].unsqueeze(1).float())
 
-        emb_cat = torch.cat([emb[data.edge_index.storage._row], emb[data.edge_index.storage._col]], dim=1) # Concat [h_u, h_v]
+        row, col, _ = data.edge_index.coo()
+        emb_cat = torch.cat([emb[row], emb[col]], dim=1) # Concat [h_u, h_v]
 
         # Train SAP module to obtain the sensitive attribute partition (SAP) matrix
         for epoch in range(500):
@@ -275,50 +276,6 @@ class FairINV(nn.Module):
         emb = self.gnn_backbone(x, edge_index)
         output = self.classifier(emb)
         return output
-
-class IRMLoss(_Loss):
-    def __init__(self):
-        super(IRMLoss, self).__init__()
-        # https://github.com/facebookresearch/InvariantRiskMinimization/blob/main/code/colored_mnist/main.py
-        """
-        compute gradients based IRM penalty with DDP fc setting
-        :param logits: local logits [bs, C]
-        :param labels: local labels [bs]
-        :param wsize: world size
-        :param cfg: config
-        :param updated_split_all: list of all partition matrix
-        :return:
-        avg IRM penalty of all partitions
-        """
-        self.loss = nn.BCEWithLogitsLoss()
-
-    def forward(self, logits, labels, updated_split_all):
-        env_penalty = []
-        # assert isinstance(updated_split_all, list), 'retain all previous partitions'
-        for updated_split_each in updated_split_all:
-            per_penalty = []
-            env_num = updated_split_each.shape[-1]
-            group_assign = updated_split_each.argmax(dim=1)
-
-            for env in range(env_num):
-                # split groups
-                select_idx = torch.where(group_assign == env)[0]
-
-                # filter subsets
-                sub_logits = logits[select_idx]
-                sub_label = labels[select_idx]
-
-                # compute penalty
-                scale_dummy = torch.tensor(1.).cuda().requires_grad_()
-                loss_env = self.loss(sub_logits * scale_dummy, sub_label)
-                loss_grad = grad(loss_env, [scale_dummy], create_graph=True)[0]
-                per_penalty.append(torch.sum(loss_grad ** 2))
-
-            env_penalty.append(torch.stack(per_penalty).mean())
-
-        loss_penalty = torch.stack(env_penalty).mean()
-
-        return loss_penalty
 
 class ConstructModel(nn.Module):
     def __init__(self, in_dim, hid_dim, encoder, layer_num, gat_heads=4, sgc_K=2):
@@ -488,3 +445,41 @@ class SAGE(nn.Module):
         x = self.transition(x)
         x = self.conv2(x, edge_index)
         return x
+
+# class IRMLoss(_Loss):
+#     def __init__(self):
+#         super(IRMLoss, self).__init__()
+#         # https://github.com/facebookresearch/InvariantRiskMinimization/blob/main/code/colored_mnist/main.py
+#         """
+#         compute gradients based IRM penalty with DDP fc setting
+#         :param logits: local logits [bs, C]
+#         :param labels: local labels [bs]
+#         :param wsize: world size
+#         :param cfg: config
+#         :param updated_split_all: list of all partition matrix
+#         :return:
+#         avg IRM penalty of all partitions
+#         """
+#         self.loss = nn.BCEWithLogitsLoss()
+
+#     def forward(self, logits, labels, updated_split_all):
+#         env_penalty = []
+#         # assert isinstance(updated_split_all, list), 'retain all previous partitions'
+#         for updated_split_each in updated_split_all:
+#             per_penalty = []
+#             env_num = updated_split_each.shape[-1]
+#             group_assign = updated_split_each.argmax(dim=1)
+#             for env in range(env_num):
+#                 # split groups
+#                 select_idx = torch.where(group_assign == env)[0]
+#                 # filter subsets
+#                 sub_logits = logits[select_idx]
+#                 sub_label = labels[select_idx]
+#                 # compute penalty
+#                 scale_dummy = torch.tensor(1.).cuda().requires_grad_()
+#                 loss_env = self.loss(sub_logits * scale_dummy, sub_label)
+#                 loss_grad = grad(loss_env, [scale_dummy], create_graph=True)[0]
+#                 per_penalty.append(torch.sum(loss_grad ** 2))
+#             env_penalty.append(torch.stack(per_penalty).mean())
+#         loss_penalty = torch.stack(env_penalty).mean()
+#         return loss_penalty
