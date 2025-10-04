@@ -9,12 +9,16 @@ from scipy.spatial import distance_matrix
 from torch.autograd import grad
 from sklearn.metrics import accuracy_score, roc_auc_score, f1_score
 
-def set_seed(seed):
-    random.seed(seed)
+def set_seed(seed, use_cuda:bool):
     np.random.seed(seed)
     torch.manual_seed(seed)
-    if torch.cuda.is_available():
+    random.seed(seed)
+    if use_cuda:
+        torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
+
+    # torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
 
 def build_relationship(x, thresh=0.25):
     df_euclid = pd.DataFrame(1 / (1 + distance_matrix(x.T.T, x.T.T)), columns=x.T.columns, index=x.T.columns)

@@ -15,17 +15,6 @@ from utils import Results, set_seed, get_metrics
 from models import ConstructModel, FairINV, EdgeAdder
 from logger import EpochLogger
 
-def set_seed(seed):
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    random.seed(seed)
-    if args.cuda:
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-
-    # torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
-
 def make_cross_group_candidates(features: torch.Tensor,
                                 sens: torch.Tensor,
                                 A_base: SparseTensor,
@@ -172,7 +161,7 @@ def run(args, data, seed_dir):
                 dp_loss = (p0 - p1).pow(2)
             else:
                 raise ValueError("Only one sensitive group present in training data.")
-            l1 = edge_adder.weights().sum() if edge_adder is not None else torch.zeros((), device=device)
+            l1 = edge_adder.weights().abs().sum() if edge_adder is not None else torch.zeros((), device=device)
             loss = bce + args.lambda_dp * dp_loss + args.lambda_edge_l1 * l1
         else:
             loss = bce
@@ -298,13 +287,14 @@ def main(args):
     dir_name = f'{args.dataset}/{args.encoder}/{args.model}/{ts}'
     args.log_dir = os.path.join(args.log_dir, dir_name)
 
+    use_cuda = torch.cuda.is_available()
     data = FairDataset(args.dataset, args.device)
     data.load_data()
     data.info()
 
     for s in range(args.seed_num):
         seed = s + args.start_seed
-        set_seed(seed)
+        set_seed(seed, use_cuda)
         args.seed_dir = os.path.join(args.log_dir, f'seed_{seed}')
         os.makedirs(args.seed_dir, exist_ok=True)
 
