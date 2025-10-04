@@ -7,13 +7,13 @@ def get_args():
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='Disables CUDA training.')
     parser.add_argument('--start_seed', type=int, default=42, help='Random seed start.')
-    parser.add_argument('--seed_num', type=int, default=0, help='The number of random seed.')
+    parser.add_argument('--seed_num', type=int, default=10, help='The number of random seed.')
     parser.add_argument('--epochs', type=int, default=1000, help='Number of epochs to train.')
     parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
     parser.add_argument('--weight_decay', type=float, default=1e-5, help='Weight decay (L2 loss on parameters).')
     parser.add_argument('--hid_dim', type=int, default=16, help='Number of hidden units.')
     parser.add_argument('--dropout', type=float, default=0.5, help='Dropout rate (1 - keep probability).')
-    parser.add_argument('--dataset', type=str, default='loan',
+    parser.add_argument('--dataset', type=str, default='german',
                         choices=['nba', 'bail', 'pokec_z', 'pokec_n', 'german'])
     parser.add_argument("--layer_num", type=int, default=2, help="number of hidden layers")
     parser.add_argument('--encoder', type=str, default='gcn', choices=['gcn','gat','gin','sage','sgc'])
