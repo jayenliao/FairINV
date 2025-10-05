@@ -302,7 +302,8 @@ class ConstructModel(nn.Module):
 
         if encoder == 'gcn':
             self.model = nn.ModuleList()
-            for i in range(layer_num-1):
+            # Build exactly `layer_num` layers.
+            for i in range(layer_num):
                 if i == 0:
                     self.model.append(GCNConv(in_dim, hid_dim))
                 else:
@@ -346,27 +347,36 @@ class ConstructModel(nn.Module):
     def forward(self, x, edge_index, edge_weight=None):
         if self.encoder == 'gcn':
             h = x
-            for i, conv in enumerate(self.model):
-                h = conv(h, edge_index, edge_weight=edge_weight)
-                if i != len(self.model) - 1:  # not the last layer
-                    h = F.relu(h)
-            return h
+            if isinstance(self.model, nn.ModuleList):
+                for i, conv in enumerate(self.model):
+                    h = conv(h, edge_index, edge_weight=edge_weight)
+                    if i != len(self.model) - 1:  # not the last layer
+                        h = F.relu(h)
+                return h
+            else:
+                return self.model(x, edge_index)
 
         elif self.encoder == 'gat':
             h = x
-            for i, conv in enumerate(self.model):
-                h = conv(h, edge_index)
-                if i != len(self.model) - 1:
-                    h = F.relu(h)
-            return h
+            if isinstance(self.model, nn.ModuleList):
+                for i, conv in enumerate(self.model):
+                    h = conv(h, edge_index)
+                    if i != len(self.model) - 1:
+                        h = F.relu(h)
+                return h
+            else:
+                return self.model(x, edge_index)
 
         elif self.encoder == 'sgc':
             h = x
-            for i, conv in enumerate(self.model):
-                h = conv(h, edge_index)
-                if i != len(self.model) - 1:
-                    h = F.relu(h)
-            return h
+            if isinstance(self.model, nn.ModuleList):
+                for i, conv in enumerate(self.model):
+                    h = conv(h, edge_index)
+                    if i != len(self.model) - 1:
+                        h = F.relu(h)
+                return h
+            else:
+                return self.model(x, edge_index)
 
         elif self.encoder in ['gin', 'sage']:
             return self.model(x, edge_index)
