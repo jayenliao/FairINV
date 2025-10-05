@@ -6,6 +6,17 @@ import os, json, random
 from scipy.spatial import distance_matrix
 from sklearn.metrics import accuracy_score, roc_auc_score, f1_score
 
+def configure_threads(num_threads: int) -> None:
+    """
+    Configure CPU threading limits for PyTorch and BLAS/OpenMP backends.
+    """
+    torch.set_num_threads(num_threads)
+    torch.set_num_interop_threads(min(2, num_threads))
+    os.environ["OMP_NUM_THREADS"] = str(num_threads)
+    os.environ["MKL_NUM_THREADS"] = str(num_threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(num_threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(num_threads)
+
 def set_seed(seed, use_cuda:bool):
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -15,7 +26,7 @@ def set_seed(seed, use_cuda:bool):
         torch.cuda.manual_seed_all(seed)
 
     # torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False 
+    torch.backends.cudnn.allow_tf32 = False
 
 def build_relationship(x, thresh=0.25):
     df_euclid = pd.DataFrame(1 / (1 + distance_matrix(x.T.T, x.T.T)), columns=x.T.columns, index=x.T.columns)

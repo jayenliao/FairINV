@@ -11,7 +11,7 @@ from tqdm import tqdm
 from datetime import datetime
 from args import get_args
 from data import FairDataset
-from utils import Results, set_seed, get_metrics
+from utils import Results, configure_threads, set_seed, get_metrics
 from models import ConstructModel, FairINV, EdgeAdder
 from logger import EpochLogger
 
@@ -286,8 +286,9 @@ def main(args):
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     dir_name = f'{args.dataset}/{args.encoder}/{args.model}/{ts}'
     args.log_dir = os.path.join(args.log_dir, dir_name)
-
     use_cuda = torch.cuda.is_available()
+    configure_threads(getattr(args, "num_threads", 4))
+
     data = FairDataset(args.dataset, args.device)
     data.load_data()
     data.info()

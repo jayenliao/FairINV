@@ -25,7 +25,8 @@ import optuna  # type: ignore
 
 from args import get_args as get_base_args
 from data import FairDataset
-from utils import set_seed as seed_everything
+from utils import set_seed
+from utils import configure_threads
 from train import run as run_vanilla_or_edge, run_fairinv
 
 # -----------------------------
@@ -187,10 +188,10 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
         a.seed_dir = str(trial_dir / f"seed_{seed}")
         os.makedirs(a.seed_dir, exist_ok=True)
 
-        seed_everything(seed, use_cuda=a.cuda)
+        set_seed(seed, use_cuda=a.cuda)
         if a.model == "fairinv":
             run_fairinv(a, data)
-        else:
+        else: # vanilla or edge_adder
             run_vanilla_or_edge(a, data, a.seed_dir)
 
     # Summarize
@@ -244,7 +245,8 @@ def main():
     parser = make_parser()
     args = parser.parse_args()
 
-    # device & data
+    # env & device & data
+    configure_threads(getattr(args, "num_threads", 4))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ds = FairDataset(args.dataset, device)
     ds.load_data()
@@ -286,7 +288,7 @@ def main():
         json.dump(best, f, indent=2)
 
     try:
-        df = study.trials_dataframe(attrs=("number","value","params","user_attrs","state"))
+        df = study.trials_dataframe(attrs=("number", "value", "params", "user_attrs", "state"))
         df.to_csv(out_root / f"optuna_history_{now_ts()}.csv", index=False)
     except Exception as e:
         print("[optuna] Could not write dataframe CSV:", e)
