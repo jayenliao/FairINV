@@ -19,9 +19,10 @@ Notes:
 import argparse, json, os, time, math, copy, hashlib
 from pathlib import Path
 from typing import Dict, Any, Tuple, List
+from tqdm import tqdm
 
 import torch  # type: ignore
-import optuna  # type: ignore
+import optuna
 
 from args import get_args as get_base_args
 from data import FairDataset
@@ -59,6 +60,10 @@ def objective_value(row: Dict[str, Any], objective: str, balanced_on: str, w_dp:
     if objective == "auc":
         v = fetch_metric(row, "auc")
         return float(v) if v is not None else float("-inf")
+    if objective == "auc_f1":
+        v_auc = fetch_metric(row, "auc")
+        v_f1 = fetch_metric(row, "f1")
+        return float(v_auc + v_f1) * 0.5 if v_auc is not None and v_f1 is not None else float("-inf")
     # balanced
     m = fetch_metric(row, "auc") if balanced_on == "auc" else fetch_metric(row, "f1")
     dp, eo = fetch_metric(row, "dp"), fetch_metric(row, "eo")
@@ -190,7 +195,8 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
 
         set_seed(seed, use_cuda=a.cuda)
         if a.model == "fairinv":
-            run_fairinv(a, data)
+            pbar = tqdm(total=args.epochs, desc=f"Seed {seed}", unit="epoch", bar_format="{l_bar}{bar:30}{r_bar}")
+            run_fairinv(a, data, pbar)
         else: # vanilla or edge_adder
             run_vanilla_or_edge(a, data, a.seed_dir)
 
@@ -220,13 +226,17 @@ def make_parser():
     p.add_argument("--log_root", type=str, default="logs/optuna")
     p.add_argument("--log_interval", type=int, default=base.log_interval)
 
+    # Threads
+    p.add_argument("--num_threads", type=int, default=base.num_threads,
+                   help="Number of CPU threads to use for BLAS/DGL/PyTorch ops.")
+
     # Seeds
     p.add_argument("--seeds", type=int, nargs="+", default=[base.start_seed + i for i in range(max(1, base.seed_num or 1))])
     p.add_argument("--start_seed", type=int, default=base.start_seed)
     p.add_argument("--seed_num", type=int, default=base.seed_num or 1)
 
     # Objective
-    p.add_argument("--objective", choices=["f1","auc","balanced"], default="balanced")
+    p.add_argument("--objective", choices=["f1", "auc", "auc_f1", "balanced"], default="auc_f1")
     p.add_argument("--balanced_on", choices=["auc", "f1"], default="f1")
     p.add_argument("--w_dp", type=float, default=1.0)
     p.add_argument("--w_eo", type=float, default=1.0)
@@ -246,7 +256,7 @@ def main():
     args = parser.parse_args()
 
     # env & device & data
-    configure_threads(getattr(args, "num_threads", 4))
+    configure_threads(getattr(args, "num_threads", 1))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ds = FairDataset(args.dataset, device)
     ds.load_data()

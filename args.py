@@ -8,7 +8,7 @@ def get_args():
                         help='Disables CUDA training.')
     parser.add_argument('--start_seed', type=int, default=42, help='Random seed start.')
     parser.add_argument('--seed_num', type=int, default=10, help='The number of random seed.')
-    parser.add_argument('--num_threads', type=int, default=8,
+    parser.add_argument('--num_threads', type=int, default=1,
                         help="Number of CPU threads to use for BLAS/DGL/PyTorch ops.")
     parser.add_argument('--epochs', type=int, default=1000, help='Number of epochs to train.')
     parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')

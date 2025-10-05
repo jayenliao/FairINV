@@ -55,7 +55,7 @@ def make_cross_group_candidates(features: torch.Tensor,
     return pairs
 
 
-def run_fairinv(args, data):
+def run_fairinv(args, data, pbar):
     torch.set_printoptions(threshold=float('inf'))
     num_class = 1
     args.in_dim = data.features.shape[1]
@@ -71,7 +71,7 @@ def run_fairinv(args, data):
     """
     Train model
     """
-    elog = fairinv.train_model(data, pbar=args.pbar)
+    elog = fairinv.train_model(data, pbar=pbar)
 
     """
     evaluation
@@ -300,8 +300,8 @@ def main(args):
         os.makedirs(args.seed_dir, exist_ok=True)
 
         if args.model == "fairinv":
-            args.pbar = tqdm(total=args.epochs, desc=f"Seed {seed}", unit="epoch", bar_format="{l_bar}{bar:30}{r_bar}")
-            auc, f1, acc, dp, eo = run_fairinv(args, data)
+            pbar = tqdm(total=args.epochs, desc=f"Seed {seed}", unit="epoch", bar_format="{l_bar}{bar:30}{r_bar}")
+            auc, f1, acc, dp, eo = run_fairinv(args, data, pbar)
         elif args.model == "vanilla" or args.model == "edge_adder":
             auc, f1, acc, dp, eo = run(args, data, args.seed_dir)
         else:
