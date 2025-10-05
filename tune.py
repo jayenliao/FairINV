@@ -13,7 +13,7 @@ import argparse, json, os, time, math, itertools, copy, hashlib
 from pathlib import Path
 from typing import Dict, Any
 
-import torch
+import torch # type: ignore
 from args import get_args as get_base_args
 from data import FairDataset
 from utils import set_seed
@@ -267,8 +267,9 @@ def main():
         best = max(summary_rows, key=lambda r: (r["val_mean"] if r["val_mean"] is not None else float("-inf")))
         with (sweep_root / "best_overall.json").open("w") as f:
             json.dump(best, f, indent=2)
-        print(f"[tune] Wrote sweep CSV: {csv_path}")
-        print(f"[tune] Best (VAL): {best['trial_dir']}  val_mean={best['val_mean']:.4f}  test_mean={best['test_mean']:.4f if best['test_mean'] is not None else float('nan')}")
+        print(f"\033[31m[tune] Wrote sweep CSV: {csv_path}\033[0m")
+        best['test_mean'] = best['test_mean'] if best['test_mean'] is not None else float('nan')
+        print(f"\033[31m[tune] Best (VAL): {best['trial_dir']}  val_mean={best['val_mean']:.4f}  test_mean={best['test_mean']:.4f}\033[0m")
     else:
         print("[tune] No trials executed. Check your grid.")
 
