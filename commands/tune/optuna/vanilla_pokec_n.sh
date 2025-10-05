@@ -5,8 +5,8 @@ DATASETS=(pokec_n)
 ENCODERS=(gcn gat gin sage sgc)
 MODELS=(vanilla)
 
-N_THREADS=${N_THREADS:-1}
-N_TRIALS=${N_TRIALS:-128}                # trials per scenario to start
+N_THREADS=${N_THREADS:-2}
+N_TRIALS=${N_TRIALS:-64}                # trials per scenario to start
 EPOCHS=${EPOCHS:-500}                    # epochs per trial
 SEEDS="${SEEDS:-0 1 2 3 4 5 6 7 8 9}"
 OBJ=${OBJ:-auc_f1}                     # f1|auc|balanced
