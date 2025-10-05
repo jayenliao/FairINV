@@ -1,12 +1,9 @@
 import torch
-import torch.nn as nn
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 import os, json, random
-from torch.nn.modules.loss import _Loss
 from scipy.spatial import distance_matrix
-from torch.autograd import grad
 from sklearn.metrics import accuracy_score, roc_auc_score, f1_score
 
 def set_seed(seed, use_cuda:bool):
@@ -18,7 +15,7 @@ def set_seed(seed, use_cuda:bool):
         torch.cuda.manual_seed_all(seed)
 
     # torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False 
 
 def build_relationship(x, thresh=0.25):
     df_euclid = pd.DataFrame(1 / (1 + distance_matrix(x.T.T, x.T.T)), columns=x.T.columns, index=x.T.columns)
