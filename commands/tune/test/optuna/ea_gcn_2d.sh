@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
-# run_optuna_all.sh — iterate the 75 scenarios (3 models × 5 backbones × 5 datasets)
-# Adjust N_TRIALS/SEEDS to fit your budget.
-
 set -e
 
-DATASETS=(german bail pokec_z pokec_n nba)
-ENCODERS=(gcn gat gin sage sgc)
-MODELS=(vanilla fairinv edge_adder)
+DATASETS=(german)
+ENCODERS=(gcn)
+MODELS=(edge_adder)
 
 N_THREADS=${N_THREADS:-8}
-N_TRIALS=${N_TRIALS:-16}                 # #trials per scenario to start
+N_TRIALS=${N_TRIALS:-4}                 # #trials per scenario to start
 EPOCHS=${EPOCHS:-500}                    # epochs per trial
 SEEDS="${SEEDS:-0 1 2}"                  # 3 seeds default
 OBJ=${OBJ:-balanced}                     # f1|auc|balanced
