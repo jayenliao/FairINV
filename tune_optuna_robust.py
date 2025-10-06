@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+"""
+tune_optuna.py — Optuna-based hyperparameter tuner for Vanilla, FairINV, and EdgeAdder
+across GCN/GAT/GIN/SAGE/SGC backbones and german/bail/pokec_z/pokec_n/nba datasets.
+
+- One study per (model, encoder, dataset) scenario.
+- Multi-seed evaluation per trial; objective is the mean VAL score across seeds.
+- Selection objective: F1, AUC, or balanced (AUC−w_dp·DP−w_eo·EO or F1−...).
+- Organized outputs under logs/optuna/...
+- Writes: best_overall.json for each study, and an Optuna dataframe CSV.
+
+Notes:
+- We reuse existing training entrypoints: train.run() and train.run_fairinv().
+- We parse seed-level metrics from metrics.jsonl emitted by logger.EpochLogger.
+- Pruning is disabled by default because training runs are monolithic; enable if you
+  refactor train loops to report intermediate values from within Optuna trials.
+"""
+
+import argparse, json, os, time, math, copy, hashlib
+from pathlib import Path
+from typing import Dict, Any, Tuple, List
+from tqdm import tqdm
+
+import torch  # type: ignore
+import optuna
+
+from args import get_args as get_base_args
+from data import FairDataset
+from utils import set_seed
+from utils import configure_threads
+from train import run as run_vanilla_or_edge, run_fairinv
+
+# -----------------------------
+# Small utils
+# -----------------------------
+
+def now_ts():
+    return time.strftime("%Y%m%d-%H%M%S")
+
+def ensure_dir(p: Path):
+    p.mkdir(parents=True, exist_ok=True)
+
+def md5_of(d: Dict[str, Any]) -> str:
+    s = json.dumps(d, sort_keys=True, ensure_ascii=False)
+    return hashlib.md5(s.encode("utf-8")).hexdigest()[:8]
+
+def fetch_metric(obj: Dict[str, Any], base: str):
+    if base in obj:
+        return obj[base]
+    for suf in ["_val", "_test"]:
+        k = base + suf
+        if k in obj:
+            return obj[k]
+    return None
+
+def objective_value(row: Dict[str, Any], objective: str, balanced_on: str, w_dp: float, w_eo: float):
+    if objective == "f1":
+        v = fetch_metric(row, "f1")
+        return float(v) if v is not None else float("-inf")
+    if objective == "auc":
+        v = fetch_metric(row, "auc")
+        return float(v) if v is not None else float("-inf")
+    if objective == "auc_f1":
+        v_auc = fetch_metric(row, "auc")
+        v_f1 = fetch_metric(row, "f1")
+        return float(v_auc + v_f1) * 0.5 if v_auc is not None and v_f1 is not None else float("-inf")
+    # balanced
+    m = fetch_metric(row, "auc") if balanced_on == "auc" else fetch_metric(row, "f1")
+    dp, eo = fetch_metric(row, "dp"), fetch_metric(row, "eo")
+    if m is None or dp is None or eo is None:
+        return float("-inf")
+    return float(m) - w_dp * float(dp) - w_eo * float(eo)
+
+def read_jsonl(path: Path) -> List[Dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows = []
+    with path.open() as f:
+        for line in f:
+            try:
+                rows.append(json.loads(line))
+            except Exception:
+                pass
+    return rows
+
+def summarize_trial_dir(trial_dir: Path, objective: str, balanced_on: str, w_dp: float, w_eo: float):
+    per_seed = []
+    for sd in sorted([p for p in trial_dir.iterdir() if p.is_dir() and p.name.startswith("seed_")]):
+        rows = read_jsonl(sd / "metrics.jsonl")
+        val_rows = [r for r in rows if r.get("split") == "val"]
+        test_rows = [r for r in rows if r.get("split") == "test"]
+        # best val row by objective
+        best = None
+        best_val = float("-inf")
+        for r in val_rows:
+            v = objective_value(r, objective, balanced_on, w_dp, w_eo)
+            if v > best_val:
+                best_val = v
+                best = r
+        test_row = test_rows[-1] if len(test_rows) > 0 else {}
+        per_seed.append({
+            "seed": int(sd.name.split("_")[-1]),
+            "best_val_score": best_val,
+            "best_val_row": best,
+            "test_row": test_row,
+            "test_score": objective_value(test_row, objective, balanced_on, w_dp, w_eo),
+        })
+    if not per_seed:
+        return {"val_mean": None, "test_mean": None, "per_seed": []}
+    val_mean = sum(s["best_val_score"] for s in per_seed) / len(per_seed)
+    test_scores = [s["test_score"] for s in per_seed if s["test_score"] is not None and not math.isnan(s["test_score"])]
+    test_mean = sum(test_scores) / len(test_scores) if test_scores else None
+    return {"val_mean": val_mean, "test_mean": test_mean, "per_seed": per_seed}
+
+# -----------------------------
+# Scenario-specific search spaces
+# -----------------------------
+
+SMALL = {"german", "bail", "nba"}
+LARGE = {"pokec_z", "pokec_n"}
+
+def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset: str) -> Dict[str, Any]:
+    """Return a dict of suggested hyperparams for this (model, encoder, dataset)."""
+    hp: Dict[str, Any] = {}
+
+    # Common spaces: learning rate, weight decay, dropout, hidden size, layers
+    if dataset in SMALL:
+        hp["lr"] = trial.suggest_float("lr", 5e-4, 5e-2, log=True)
+        hp["weight_decay"] = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
+        hp["hid_dim"] = trial.suggest_categorical("hid_dim", [16, 32, 64, 128])
+    else:  # LARGE
+        hp["lr"] = trial.suggest_float("lr", 1e-4, 5e-2, log=True)
+        hp["weight_decay"] = trial.suggest_float("weight_decay", 1e-6, 3e-3, log=True)
+        hp["hid_dim"] = trial.suggest_categorical("hid_dim", [32, 64, 128, 256])
+
+    hp["dropout"] = trial.suggest_float("dropout", 0.0, 0.7)
+    # layer_num: used by GCN/GAT; SGC ignores beyond 1; GIN/SAGE custom modules ignore layer_num internally.
+    if encoder in {"gcn", "gat"}:
+        hp["layer_num"] = trial.suggest_int("layer_num", 1, 3)
+    elif encoder == "sgc":
+        hp["layer_num"] = 1  # ConstructModel stacks a single SGConv
+    else:
+        hp["layer_num"] = 2
+
+    # Model-specific
+    if model == "fairinv":
+        hp["alpha"] = trial.suggest_float("alpha", 1e-1, 1e+1, log=True)       # balance Var + alpha*Mean
+        hp["lr_sp"] = trial.suggest_float("lr_sp", 1e-2, 2e-1, log=True)       # SAP learning rate
+        hp["env_num"] = trial.suggest_int("env_num", 2, 3)                      # #environments (groups)
+        # partition_times impacts runtime heavily; keep default (3).
+
+    if model == "edge_adder":
+        # Candidate edges per node (compute grows with k)
+        if dataset in SMALL:
+            hp["edge_k"] = trial.suggest_int("edge_k", 1, 4)
+        else:
+            hp["edge_k"] = trial.suggest_int("edge_k", 1, 3)
+        hp["lambda_dp"] = trial.suggest_float("lambda_dp", 1e-3, 1.0, log=True)
+        hp["lambda_edge_l1"] = trial.suggest_float("lambda_edge_l1", 1e-5, 1e-2, log=True)
+
+    return hp
+
+# -----------------------------
+# Optuna objective
+# -----------------------------
+
+def build_trial_dir(root: Path, model: str, encoder: str, dataset: str, objective: str, tag: str, study_stamp: str, trial_number: int, hp: Dict[str, Any]) -> Path:
+    meta = {"m": model, "enc": encoder, "ds": dataset, "obj": objective, **hp}
+    h = md5_of(meta)
+    base = root / dataset / encoder / model / objective
+    stamp = study_stamp + (f"_{tag}" if tag else "")
+    return base / f"{stamp}" / f"trial_{trial_number:04d}_{h}"
+
+def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, seeds: List[int], study_stamp:str) -> Tuple[float, float, Path]:
+    hp = suggest_hparams(trial, args.model, args.encoder, args.dataset)
+    trial.set_user_attr("hparams", hp)
+    trial_dir = build_trial_dir(Path(args.log_root), args.model, args.encoder, args.dataset, args.objective, args.tag, study_stamp, trial.number, hp)
+    ensure_dir(trial_dir)
+    with (trial_dir / "args_trial.json").open("w") as f:
+        json.dump({"hparams": hp, "objective": args.objective, "balanced_on": args.balanced_on, "w_dp": args.w_dp, "w_eo": args.w_eo}, f, indent=2)
+
+    # Run across seeds
+    for seed in seeds:
+        # Prepare a per-seed args-like object
+        a = copy.deepcopy(args)
+        for k, v in hp.items(): setattr(a, k, v)
+        a.start_seed = seed
+        a.seed_num = 1
+        a.device = device
+        a.cuda = torch.cuda.is_available()
+        a.log_dir = str(trial_dir)
+        a.seed_dir = str(trial_dir / f"seed_{seed}")
+        os.makedirs(a.seed_dir, exist_ok=True)
+
+        set_seed(seed, use_cuda=a.cuda)
+        if a.model == "fairinv":
+            pbar = tqdm(total=args.epochs, desc=f"Seed {seed}", unit="epoch", bar_format="{l_bar}{bar:30}{r_bar}")
+            run_fairinv(a, data, pbar)
+        else: # vanilla or edge_adder
+            run_vanilla_or_edge(a, data, a.seed_dir)
+
+    # Summarize
+    summ = summarize_trial_dir(trial_dir, args.objective, args.balanced_on, args.w_dp, args.w_eo)
+    with (trial_dir / "trial_summary.json").open("w") as f:
+        json.dump(summ, f, indent=2)
+
+    val_mean = summ["val_mean"] if summ["val_mean"] is not None else float("-inf")
+    test_mean = summ["test_mean"] if summ["test_mean"] is not None else float("nan")
+    trial.set_user_attr("val_mean", float(val_mean))
+    trial.set_user_attr("test_mean", float(test_mean))
+    return float(val_mean), float(test_mean), trial_dir
+
+# -----------------------------
+# CLI & main
+# -----------------------------
+
+def make_parser():
+    base = get_base_args()  # grab defaults to mirror train.py
+    p = argparse.ArgumentParser(description="Optuna tuner for Fair GNNs")
+    p.add_argument("--model", choices=["vanilla", "fairinv", "edge_adder"], default=base.model)
+    p.add_argument("--encoder", choices=["gcn", "gat", "gin", "sage", "sgc"], default=base.encoder)
+    p.add_argument("--dataset", choices=["nba", "bail", "pokec_z", "pokec_n", "german"], default=base.dataset)
+
+    p.add_argument("--epochs", type=int, default=base.epochs)
+    p.add_argument("--log_root", type=str, default="logs/optuna")
+    p.add_argument("--log_interval", type=int, default=base.log_interval)
+
+    # Threads
+    p.add_argument("--num_threads", type=int, default=base.num_threads,
+                   help="Number of CPU threads to use for BLAS/DGL/PyTorch ops.")
+
+    # Seeds
+    p.add_argument("--seeds", type=int, nargs="+", default=[base.start_seed + i for i in range(max(1, base.seed_num or 1))])
+    p.add_argument("--start_seed", type=int, default=base.start_seed)
+    p.add_argument("--seed_num", type=int, default=base.seed_num or 1)
+
+    # Objective
+    p.add_argument("--objective", choices=["f1", "auc", "auc_f1", "balanced"], default="auc_f1")
+    p.add_argument("--balanced_on", choices=["auc", "f1"], default="f1")
+    p.add_argument("--w_dp", type=float, default=1.0)
+    p.add_argument("--w_eo", type=float, default=1.0)
+
+    # Optuna controls
+    p.add_argument("--n_trials", type=int, default=40)
+    p.add_argument("--study_name", type=str, default="auto")
+    p.add_argument("--storage", type=str, default=None, help="e.g., sqlite:///optuna.db")
+    p.add_argument("--sampler", type=str, choices=["tpe","random"], default="tpe")
+    p.add_argument("--pruner", type=str, choices=["none","median"], default="none")
+    p.add_argument("--tag", type=str, default="")
+
+    return p
+
+def main():
+    parser = make_parser()
+    args = parser.parse_args()
+
+    # env & device & data
+    configure_threads(getattr(args, "num_threads", 1))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ds = FairDataset(args.dataset, device)
+    ds.load_data()
+
+    # Build seeds list
+    seeds = args.seeds if (args.seeds and len(args.seeds) > 0) else [args.start_seed + i for i in range(max(1, args.seed_num))]
+
+    # Sampler & pruner
+    sampler = optuna.samplers.TPESampler(n_startup_trials=10, multivariate=True) if args.sampler == "tpe" else optuna.samplers.RandomSampler()
+    pruner = None if args.pruner == "none" else optuna.pruners.MedianPruner(n_startup_trials=10, n_warmup_steps=0)
+
+    # Study naming
+    if args.study_name == "auto":
+        study_name = f"{args.model}-{args.encoder}-{args.dataset}-{args.objective}"
+    else:
+        study_name = args.study_name
+
+    study_stamp = now_ts()
+    study = optuna.create_study(direction="maximize", study_name=study_name, sampler=sampler, pruner=pruner,
+                                storage=args.storage, load_if_exists=True)
+
+    def _objective(trial: optuna.trial.Trial):
+        val_mean, test_mean, tdir = run_one_trial(args, device, ds, trial, seeds, study_stamp)
+        # Report once at the end (no pruning mid-run)
+        trial.set_user_attr("trial_dir", str(tdir))
+        return val_mean
+
+    study.optimize(_objective, n_trials=args.n_trials, show_progress_bar=True)
+
+    # Save study artifacts
+    out_root = Path(args.log_root) / args.dataset / args.encoder / args.model / args.objective
+    ensure_dir(out_root)
+    best = {
+        "number": study.best_trial.number,
+        "value": float(study.best_value),
+        "params": study.best_trial.params,
+        "user_attrs": study.best_trial.user_attrs,
+    }
+    with (out_root / "best_overall.json").open("w") as f:
+        json.dump(best, f, indent=2)
+
+    try:
+        df = study.trials_dataframe(attrs=("number", "value", "params", "user_attrs", "state"))
+        df.to_csv(out_root / f"optuna_history_{now_ts()}.csv", index=False)
+    except Exception as e:
+        print("[optuna] Could not write dataframe CSV:", e)
+
+    print(f"[optuna] Study '{study.study_name}' finished. Best value = {study.best_value:.4f}")
+
+if __name__ == "__main__":
+    if torch.cuda.is_available():
+        torch.multiprocessing.set_start_method("spawn", force=True)
+    main()
