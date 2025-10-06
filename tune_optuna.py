@@ -164,18 +164,17 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
 # Optuna objective
 # -----------------------------
 
-def build_trial_dir(root: Path, model: str, encoder: str, dataset: str, objective: str, tag: str, trial_number: int, hp: Dict[str, Any]) -> Path:
+def build_trial_dir(root: Path, model: str, encoder: str, dataset: str, objective: str, tag: str, study_stamp: str, trial_number: int, hp: Dict[str, Any]) -> Path:
     meta = {"m": model, "enc": encoder, "ds": dataset, "obj": objective, **hp}
     h = md5_of(meta)
     base = root / dataset / encoder / model / objective
-    stamp = now_ts() + (f"_{tag}" if tag else "")
+    stamp = study_stamp + (f"_{tag}" if tag else "")
     return base / f"{stamp}" / f"trial_{trial_number:04d}_{h}"
 
-def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, seeds: List[int]) -> Tuple[float, float, Path]:
+def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, seeds: List[int], study_stamp:str) -> Tuple[float, float, Path]:
     hp = suggest_hparams(trial, args.model, args.encoder, args.dataset)
     trial.set_user_attr("hparams", hp)
-
-    trial_dir = build_trial_dir(Path(args.log_root), args.model, args.encoder, args.dataset, args.objective, args.tag, trial.number, hp)
+    trial_dir = build_trial_dir(Path(args.log_root), args.model, args.encoder, args.dataset, args.objective, args.tag, study_stamp, trial.number, hp)
     ensure_dir(trial_dir)
     with (trial_dir / "args_trial.json").open("w") as f:
         json.dump({"hparams": hp, "objective": args.objective, "balanced_on": args.balanced_on, "w_dp": args.w_dp, "w_eo": args.w_eo}, f, indent=2)
@@ -274,11 +273,12 @@ def main():
     else:
         study_name = args.study_name
 
+    study_stamp = now_ts()
     study = optuna.create_study(direction="maximize", study_name=study_name, sampler=sampler, pruner=pruner,
                                 storage=args.storage, load_if_exists=True)
 
     def _objective(trial: optuna.trial.Trial):
-        val_mean, test_mean, tdir = run_one_trial(args, device, ds, trial, seeds)
+        val_mean, test_mean, tdir = run_one_trial(args, device, ds, trial, seeds, study_stamp)
         # Report once at the end (no pruning mid-run)
         trial.set_user_attr("trial_dir", str(tdir))
         return val_mean
