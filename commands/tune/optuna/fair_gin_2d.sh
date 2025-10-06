@@ -4,14 +4,14 @@
 
 set -e
 
-DATASETS=(german)
-ENCODERS=(gcn)
+DATASETS=(german nba)
+ENCODERS=(gin)
 MODELS=(fairinv)
 
-N_THREADS=${N_THREADS:-8}
-N_TRIALS=${N_TRIALS:-2}                  # #trials per scenario to start
-EPOCHS=${EPOCHS:-200}                    # epochs per trial
-SEEDS="${SEEDS:-0 1}"                  # 3 seeds default
+N_THREADS=${N_THREADS:-5}
+N_TRIALS=${N_TRIALS:-64}                 # #trials per scenario to start
+EPOCHS=${EPOCHS:-500}                    # epochs per trial
+SEEDS="${SEEDS:-0 1 2 3 4 5 6 7 8 9}"
 OBJ=${OBJ:-auc_f1_mean_minus_std}
 BAL_ON=${BAL_ON:-f1}                     # when balanced
 W_DP=${W_DP:-1.0}
@@ -26,7 +26,7 @@ for ds in "${DATASETS[@]}"; do
         --num_threads ${N_THREADS} --seeds ${SEEDS} --epochs ${EPOCHS} \
         --objective ${OBJ} --balanced_on ${BAL_ON} --w_dp ${W_DP} --w_eo ${W_EO} \
         --n_trials ${N_TRIALS} --sampler tpe --pruner median \
-        --log_root "logs/optuna_test" --tag "robust"
+        --log_root "logs/optuna" --tag "robust"
     done
   done
 done
