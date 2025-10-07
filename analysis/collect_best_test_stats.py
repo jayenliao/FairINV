@@ -71,7 +71,8 @@ def collect_stats(trial_dir: Path, objective: str, balanced_on: str, w_dp: float
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--best_json", required=True, help="Path to best_overall.json produced by tune_optuna.py")
-    ap.add_argument("--objective", default="balanced", choices=["f1","auc","balanced"])
+    ap.add_argument("--objective", type=str, default="auc_f1",
+                    choices=["f1", "auc", "auc_f1", "balanced", "f1_mean_minus_std", "auc_f1_mean_minus_std"])
     ap.add_argument("--balanced_on", default="auc", choices=["auc","f1"])
     ap.add_argument("--w_dp", type=float, default=1.0)
     ap.add_argument("--w_eo", type=float, default=1.0)
