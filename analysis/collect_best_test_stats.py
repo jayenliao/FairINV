@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, json, statistics as stats
+import os, argparse, json, statistics as stats
 from pathlib import Path
 
 def fetch_metric(row, base):
@@ -68,20 +68,49 @@ def collect_stats(trial_dir: Path, objective: str, balanced_on: str, w_dp: float
         summary[k] = {"mean": mu, "std": sd, "n": len(arr), "values": arr}
     return summary
 
+def print_mean_std(stats_json, show_metric_names:bool=False) -> None:
+    for k, v in stats_json.items():
+        k_ = f"{k}:"
+        if show_metric_names:
+            print(f"{k_:4s} {v['mean']*100:.2f} ± {v['std']*100:.2f}")
+        else:
+            if k == "acc":
+                continue
+            print(f"{v['mean']*100:.2f} ± {v['std']*100:.2f}")
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--best_json", required=True, help="Path to best_overall.json produced by tune_optuna.py")
+    ap.add_argument("best_json", help="Path to best_overall.json produced by tune_optuna.py")
+    ap.add_argument("--model", type=str, default=None, choices=["vanilla", "fairinv", "edge_adder"], help="")
     ap.add_argument("--objective", type=str, default="auc_f1",
                     choices=["f1", "auc", "auc_f1", "balanced", "f1_mean_minus_std", "auc_f1_mean_minus_std"])
     ap.add_argument("--balanced_on", default="auc", choices=["auc","f1"])
     ap.add_argument("--w_dp", type=float, default=1.0)
     ap.add_argument("--w_eo", type=float, default=1.0)
     ap.add_argument("--out", default=None, help="Where to save the stats JSON (default: next to best_overall.json)")
+    ap.add_argument("--show_metric_names", action="store_true", help="Whether to show metric names in printed output")
     args = ap.parse_args()
 
+    def _get_first_layer_name(s:str) -> Path:
+        out = s.split('/')[0]
+        out = s.split('/')[1] if out in ['', ' ', '.'] else out
+        return Path(out)
+
     best = json.load(open(args.best_json))
+    root_json = _get_first_layer_name(args.best_json)
     trial_dir = best["user_attrs"]["trial_dir"]
-    stats_json = collect_stats(Path(trial_dir), args.objective, args.balanced_on, args.w_dp, args.w_eo)
+    root_trial = _get_first_layer_name(trial_dir)
+    if root_json != root_trial:
+        trial_dir = str(Path(root_json) / Path(trial_dir).relative_to(root_trial))
+    try:
+        stats_json = collect_stats(Path(trial_dir), args.objective, args.balanced_on, args.w_dp, args.w_eo)
+    except FileNotFoundError:
+        ts_old = trial_dir.split('/')[-2]
+        lst_ts = os.listdir(Path(trial_dir).parent.parent)
+        lst_ts.sort()
+        ts_new = lst_ts[-1]
+        trial_dir = trial_dir.replace(ts_old, ts_new)
+        stats_json = collect_stats(Path(trial_dir), args.objective, args.balanced_on, args.w_dp, args.w_eo)
 
     if args.out is None:
         out_path = Path(args.best_json).with_name("best_trial_test_stats.json")
@@ -90,7 +119,7 @@ def main():
     with open(out_path, "w") as f:
         json.dump(stats_json, f, indent=2)
 
-    print(json.dumps(stats_json, indent=2))
+    print_mean_std(stats_json, show_metric_names=args.show_metric_names)
     print(f"\nSaved: {out_path}")
 
 if __name__ == "__main__":
