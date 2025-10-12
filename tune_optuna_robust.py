@@ -173,7 +173,7 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
         elif encoder in ["sage"]:
             hp["layer_num"] = 2
         else: # gat
-            hp["layer_num"] = trial.suggest_int("layer_num", 1, 3)
+            hp["layer_num"] = trial.suggest_int("layer_num", 1, 2)
     else:
         if encoder in {"gcn", "gat"}:
             hp["layer_num"] = trial.suggest_int("layer_num", 1, 3)
