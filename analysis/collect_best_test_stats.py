@@ -120,7 +120,7 @@ def main():
         json.dump(stats_json, f, indent=2)
 
     print_mean_std(stats_json, show_metric_names=args.show_metric_names)
-    print(f"\nSaved: {out_path}")
+    print(f"Saved: {out_path}")
 
 if __name__ == "__main__":
     main()
