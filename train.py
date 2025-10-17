@@ -12,6 +12,7 @@ from datetime import datetime
 from args import get_args
 from data import FairDataset
 from utils import Results, configure_threads, set_seed, get_metrics
+from policies import build_policies
 from models import ConstructModel, FairINV, EdgeAdder
 from logger import EpochLogger
 
@@ -34,7 +35,7 @@ def make_cross_group_candidates(features: torch.Tensor,
     with torch.no_grad():
         S = X[idx0] @ X[idx1].T  # [|0|, |1|] cosine similarities
         k = min(k_per_node, S.shape[1])
-        topv, topk = torch.topk(S, k=k, dim=1)
+        topv, topk = torch.topk(S, k=k, dim=1) # [N, k]
         I = idx0.repeat_interleave(k)          # sources in group 0
         J = idx1[topk.reshape(-1)]             # matched targets in group 1
         pairs = torch.stack([I, J], dim=0)     # [2, M]
@@ -104,7 +105,8 @@ def run_fairinv(args, data, pbar):
 
     return auc_test, f1_test, acc_test, dp_test, eo_test
 
-def run(args, data, seed_dir):
+def run_vanilla(args, data, seed_dir):
+    # Basic setup
     seed = int(seed_dir.split('seed_')[-1])
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     X = data.features
@@ -113,24 +115,11 @@ def run(args, data, seed_dir):
     idx_tr, idx_va, idx_te = data.idx_train, data.idx_val, data.idx_test
     in_dim = X.shape[1]
     out_dim = 1
+
+    # Build models (backbone + clf)
     backbone = ConstructModel(in_dim, args.hid_dim, args.encoder, args.layer_num).to(device)
     clf = nn.Linear(args.hid_dim, out_dim).to(device)
-
-    use_edge_add = getattr(args, "model", "vanilla") == "edge_adder"
-    # --- Edge adder module ---
-    if use_edge_add:
-        cand_ij = make_cross_group_candidates(
-            X, data.sens, EI, k_per_node=getattr(args, "edge_k", 2), device=device)
-        edge_adder = None
-        if cand_ij.numel() > 0:
-            edge_adder = EdgeAdder(X.shape[0], cand_ij, device=device).to(device)
-            params = list(backbone.parameters()) + list(clf.parameters()) + list(edge_adder.parameters())
-        else:
-            params = list(backbone.parameters()) + list(clf.parameters())
-            print("\033[31m[!] Warning: no cross-group candidate edges found; running vanilla training.\033[0m")
-    else:
-        edge_adder = None
-        params = list(backbone.parameters()) + list(clf.parameters())
+    params = list(backbone.parameters()) + list(clf.parameters())
 
     opt = torch.optim.Adam(params, lr=args.lr, weight_decay=args.weight_decay)
     loss_fn = nn.BCEWithLogitsLoss()
@@ -143,29 +132,13 @@ def run(args, data, seed_dir):
         clf.train()
         opt.zero_grad()
 
-        if edge_adder is not None:
-            A_blend = (EI + edge_adder.sparse_tensor()).coalesce()
-        else:
-            A_blend = EI
+        A_blend = EI
 
         H = backbone(X, A_blend)          # [N, hid]
         logits = clf(H).squeeze(1)        # [N]
-        probs  = torch.sigmoid(logits)
         loss_bce = loss_fn(logits[idx_tr], Y[idx_tr].float())
-
-        if edge_adder is not None:
-            s_tr = data.sens[idx_tr].long()
-            if (s_tr == 0).any() and (s_tr == 1).any():
-                p0 = probs[idx_tr][s_tr == 0].mean()
-                p1 = probs[idx_tr][s_tr == 1].mean()
-                loss_dp = (p0 - p1).pow(2)
-            else:
-                raise ValueError("Only one sensitive group present in training data.")
-            l1 = edge_adder.weights().abs().sum() if edge_adder is not None else torch.zeros((), device=device)
-            loss = loss_bce + args.lambda_dp * loss_dp + args.lambda_edge_l1 * l1
-        else:
-            loss = loss_bce
-            loss_dp, l1 = None, None
+        loss = loss_bce
+        loss_dp, l1 = None, None
 
         # --- Train metrics & logging ---
         with torch.no_grad():
@@ -198,22 +171,9 @@ def run(args, data, seed_dir):
             H_val = backbone(X, A_blend)
             logit_val = clf(H_val).squeeze(1)
             loss_bce_val = loss_fn(logit_val[idx_va], Y[idx_va].float())
-            probs_val = torch.sigmoid(logit_val)
-            # DP loss on VAL (only when edge_adder is active)
-            if edge_adder is not None:
-                s_va = data.sens[idx_va].long()
-                if (s_va == 0).any() and (s_va == 1).any():
-                    pv0 = probs_val[idx_va][s_va == 0].mean()
-                    pv1 = probs_val[idx_va][s_va == 1].mean()
-                    loss_dp_val = (pv0 - pv1).pow(2)
-                else:
-                    loss_dp_val = torch.tensor(0.0, device=device)
-                l1_val = l1  # same parameter regularizer; log under val for completeness
-                loss_val_total = loss_bce_val + args.lambda_dp * loss_dp_val + args.lambda_edge_l1 * l1_val
-            else:
-                loss_dp_val = None
-                l1_val = None
-                loss_val_total = loss_bce_val
+            loss_dp_val = None
+            l1_val = None
+            loss_val_total = loss_bce_val
 
         pred_val = (logit_val > 0).long()
         auc, f1, acc, dp, eo = get_metrics(
@@ -243,13 +203,8 @@ def run(args, data, seed_dir):
         }
         elog.log(ep, "val", metrics_val)
 
-        if edge_adder is not None and loss_dp is not None and l1 is not None:
-            message = f"loss: {loss.item():.3f}, bce: {loss_bce.item():.3f}, loss_dp: {loss_dp.item():.3f}, l1: {l1.item():.3f}"
-            message += f", auc: {auc:.3f}, f1: {f1:.3f}, acc: {acc:.3f}, dp: {dp:.3f}, eo: {eo:.3f}"
-        else:
-            message = f"loss(bce): {loss.item():.3f}"
-            message += f", auc: {auc:.3f}, f1: {f1:.3f}, acc: {acc:.3f}, dp: {dp:.3f}, eo: {eo:.3f}"
-
+        message = f"loss(bce): {loss.item():.3f}"
+        message += f", auc: {auc:.3f}, f1: {f1:.3f}, acc: {acc:.3f}, dp: {dp:.3f}, eo: {eo:.3f}"
         if (ep+1) % args.log_interval == 0:
             pbar.set_postfix({"Seed": seed, "Epoch": ep+1, "Message": message})
 
@@ -259,7 +214,7 @@ def run(args, data, seed_dir):
     backbone.eval()
     clf.eval()
     with torch.no_grad():
-        Ht = backbone(X, (EI + edge_adder.sparse_tensor()).coalesce() if edge_adder is not None else EI)
+        Ht = backbone(X, EI)
         logit_t = clf(Ht).squeeze(1)
     pred_t = (logit_t > 0).long()
 
@@ -277,7 +232,6 @@ def run(args, data, seed_dir):
     elog.close()
 
     print(f"[TEST] AUC: {auc_test:.4f}  F1: {f1_test:.4f}  ACC: {acc_test:.4f}  DP: {dp_test:.4f}  EO: {eo_test:.4f}")
-
     return auc_test, f1_test, acc_test, dp_test, eo_test
 
 def main(args):
@@ -303,7 +257,7 @@ def main(args):
             pbar = tqdm(total=args.epochs, desc=f"Seed {seed}", unit="epoch", bar_format="{l_bar}{bar:30}{r_bar}")
             auc, f1, acc, dp, eo = run_fairinv(args, data, pbar)
         elif args.model == "vanilla" or args.model == "edge_adder":
-            auc, f1, acc, dp, eo = run(args, data, args.seed_dir)
+            auc, f1, acc, dp, eo = run_vanilla(args, data, args.seed_dir)
         else:
             raise ValueError("Invalid mode. Choose 'fairinv' or 'vanilla'.")
         results.auc[s, :], results.f1[s, :], results.acc[s, :], \
