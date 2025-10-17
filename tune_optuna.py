@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 tune_optuna.py — Optuna-based hyperparameter tuner for Vanilla, FairINV, and EdgeAdder
 across GCN/GAT/GIN/SAGE/SGC backbones and german/bail/pokec_z/pokec_n/nba datasets.
@@ -17,6 +16,7 @@ Notes:
 """
 
 import argparse, json, os, time, math, copy, hashlib
+import statistics as stats
 from pathlib import Path
 from typing import Dict, Any, Tuple, List
 from tqdm import tqdm
@@ -106,11 +106,42 @@ def summarize_trial_dir(trial_dir: Path, objective: str, balanced_on: str, w_dp:
             "test_score": objective_value(test_row, objective, balanced_on, w_dp, w_eo),
         })
     if not per_seed:
-        return {"val_mean": None, "test_mean": None, "per_seed": []}
+        return {
+            "val_mean": None, "test_mean": None, "per_seed": [],
+            "val_metric_stats": {"f1_mean": None, "f1_std": None, "auc_mean": None, "auc_std": None}
+        }
+
     val_mean = sum(s["best_val_score"] for s in per_seed) / len(per_seed)
     test_scores = [s["test_score"] for s in per_seed if s["test_score"] is not None and not math.isnan(s["test_score"])]
     test_mean = sum(test_scores) / len(test_scores) if test_scores else None
-    return {"val_mean": val_mean, "test_mean": test_mean, "per_seed": per_seed}
+
+    # after building per_seed
+    f1_vals, auc_vals = [], []
+    for s in per_seed:
+        r = s.get("best_val_row") or {}
+        v_f1 = fetch_metric(r, "f1")
+        v_auc = fetch_metric(r, "auc")
+        if v_f1 is not None: f1_vals.append(float(v_f1))
+        if v_auc is not None: auc_vals.append(float(v_auc))
+
+    def _mean_std(xs):
+        if not xs: return None, None
+        mu = stats.mean(xs)
+        sd = stats.pstdev(xs) if len(xs) > 1 else 0.0
+        return mu, sd
+
+    f1_mean, f1_std = _mean_std(f1_vals)
+    auc_mean, auc_std = _mean_std(auc_vals)
+
+    return {
+        "val_mean": val_mean,
+        "test_mean": test_mean,
+        "per_seed": per_seed,
+        "val_metric_stats": {
+            "f1_mean": f1_mean, "f1_std": f1_std,
+            "auc_mean": auc_mean, "auc_std": auc_std,
+        }
+    }
 
 # -----------------------------
 # Scenario-specific search spaces
@@ -135,17 +166,25 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
 
     hp["dropout"] = trial.suggest_float("dropout", 0.0, 0.7)
     # layer_num: used by GCN/GAT; SGC ignores beyond 1; GIN/SAGE custom modules ignore layer_num internally.
-    if encoder in {"gcn", "gat"}:
-        hp["layer_num"] = trial.suggest_int("layer_num", 1, 3)
-    elif encoder == "sgc":
-        hp["layer_num"] = 1  # ConstructModel stacks a single SGConv
+    if model == "fairinv":
+        if encoder in ["gcn", "gin", "sgc"]:
+            hp["layer_num"] = 1
+        elif encoder in ["sage"]:
+            hp["layer_num"] = 2
+        else: # gat
+            hp["layer_num"] = trial.suggest_int("layer_num", 1, 2)
     else:
-        hp["layer_num"] = 2
+        if encoder in {"gcn", "gat"}:
+            hp["layer_num"] = trial.suggest_int("layer_num", 1, 3)
+        elif encoder == "sgc":
+            hp["layer_num"] = 1  # ConstructModel stacks a single SGConv
+        else: # sage, gin
+            hp["layer_num"] = 2
 
     # Model-specific
     if model == "fairinv":
         hp["alpha"] = trial.suggest_float("alpha", 1e-1, 1e+1, log=True)       # balance Var + alpha*Mean
-        hp["lr_sp"] = trial.suggest_float("lr_sp", 1e-2, 2e-1, log=True)       # SAP learning rate
+        hp["lr_sp"] = trial.suggest_float("lr_sp", 1e-2, 5e-1, log=True)       # SAP learning rate
         hp["env_num"] = trial.suggest_int("env_num", 2, 3)                      # #environments (groups)
         # partition_times impacts runtime heavily; keep default (3).
 
@@ -164,12 +203,16 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
 # Optuna objective
 # -----------------------------
 
+def build_timestamp_dir(root: Path, model: str, encoder: str, dataset: str, objective: str, tag: str, study_stamp: str) -> Path:
+    base = root / dataset / encoder / model / objective
+    stamp = study_stamp + (f"_{tag}" if tag else "")
+    return base / f"{stamp}"
+
 def build_trial_dir(root: Path, model: str, encoder: str, dataset: str, objective: str, tag: str, study_stamp: str, trial_number: int, hp: Dict[str, Any]) -> Path:
     meta = {"m": model, "enc": encoder, "ds": dataset, "obj": objective, **hp}
     h = md5_of(meta)
-    base = root / dataset / encoder / model / objective
-    stamp = study_stamp + (f"_{tag}" if tag else "")
-    return base / f"{stamp}" / f"trial_{trial_number:04d}_{h}"
+    base = build_timestamp_dir(root, model, encoder, dataset, objective, tag, study_stamp)
+    return base / f"trial_{trial_number:04d}_{h}"
 
 def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, seeds: List[int], study_stamp:str) -> Tuple[float, float, Path]:
     hp = suggest_hparams(trial, args.model, args.encoder, args.dataset)
@@ -183,7 +226,8 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
     for seed in seeds:
         # Prepare a per-seed args-like object
         a = copy.deepcopy(args)
-        for k, v in hp.items(): setattr(a, k, v)
+        for k, v in hp.items():
+            setattr(a, k, v)
         a.start_seed = seed
         a.seed_num = 1
         a.device = device
@@ -204,11 +248,30 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
     with (trial_dir / "trial_summary.json").open("w") as f:
         json.dump(summ, f, indent=2)
 
+    vm = summ.get("val_metric_stats", {}) or {}
+    f1_mean = vm.get("f1_mean", float("-inf"))
+    f1_std = vm.get("f1_std", float("inf"))
+    auc_mean = vm.get("auc_mean", float("-inf"))
+    auc_std = vm.get("auc_std", float("inf"))
+
+    if args.objective == "f1_mean_minus_std" and f1_mean is not None and f1_std is not None:
+        val_score_for_study = float(f1_mean) - float(f1_std)
+    elif args.objective == "auc_f1_mean_minus_std" and all(v is not None for v in [f1_mean, f1_std, auc_mean, auc_std]):
+        val_score_for_study = 0.5 * ((float(f1_mean) - float(f1_std)) + (float(auc_mean) - float(auc_std)))
+    else:
+        val_score_for_study = summ["val_mean"] if summ["val_mean"] is not None else float("-inf")
+
+    # keep legacy attrs for debugging
     val_mean = summ["val_mean"] if summ["val_mean"] is not None else float("-inf")
     test_mean = summ["test_mean"] if summ["test_mean"] is not None else float("nan")
     trial.set_user_attr("val_mean", float(val_mean))
     trial.set_user_attr("test_mean", float(test_mean))
-    return float(val_mean), float(test_mean), trial_dir
+    trial.set_user_attr("val_f1_mean", f1_mean)
+    trial.set_user_attr("val_f1_std", f1_std)
+    trial.set_user_attr("val_auc_mean", auc_mean)
+    trial.set_user_attr("val_auc_std", auc_std)
+
+    return float(val_score_for_study), float(test_mean), trial_dir
 
 # -----------------------------
 # CLI & main
@@ -225,6 +288,10 @@ def make_parser():
     p.add_argument("--log_root", type=str, default="logs/optuna")
     p.add_argument("--log_interval", type=int, default=base.log_interval)
 
+    # FairINV - SAP
+    p.add_argument("--partition_times", type=int, default=base.partition_times,
+                   help='the number for partitioning the sensitive attribute group.')
+
     # Threads
     p.add_argument("--num_threads", type=int, default=base.num_threads,
                    help="Number of CPU threads to use for BLAS/DGL/PyTorch ops.")
@@ -235,7 +302,8 @@ def make_parser():
     p.add_argument("--seed_num", type=int, default=base.seed_num or 1)
 
     # Objective
-    p.add_argument("--objective", choices=["f1", "auc", "auc_f1", "balanced"], default="auc_f1")
+    p.add_argument("--objective", type=str, default="auc_f1",
+                   choices=["f1", "auc", "auc_f1", "balanced", "f1_mean_minus_std", "auc_f1_mean_minus_std"])
     p.add_argument("--balanced_on", choices=["auc", "f1"], default="f1")
     p.add_argument("--w_dp", type=float, default=1.0)
     p.add_argument("--w_eo", type=float, default=1.0)
@@ -274,6 +342,8 @@ def main():
         study_name = args.study_name
 
     study_stamp = now_ts()
+    out_root = build_timestamp_dir(Path(args.log_root), args.model, args.encoder, args.dataset, args.objective, args.tag, study_stamp)
+    ensure_dir(out_root)
     study = optuna.create_study(direction="maximize", study_name=study_name, sampler=sampler, pruner=pruner,
                                 storage=args.storage, load_if_exists=True)
 
@@ -286,8 +356,6 @@ def main():
     study.optimize(_objective, n_trials=args.n_trials, show_progress_bar=True)
 
     # Save study artifacts
-    out_root = Path(args.log_root) / args.dataset / args.encoder / args.model / args.objective
-    ensure_dir(out_root)
     best = {
         "number": study.best_trial.number,
         "value": float(study.best_value),
