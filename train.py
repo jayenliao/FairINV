@@ -105,6 +105,170 @@ def run_fairinv(args, data, pbar):
 
     return auc_test, f1_test, acc_test, dp_test, eo_test
 
+def _soft_dp_from_logits(logits: torch.Tensor, sens: torch.Tensor, idx: torch.Tensor):
+    """Soft demographic parity on a subset (no thresholding)."""
+    probs = torch.sigmoid(logits)
+    s = sens[idx].long()
+    if (s == 0).any() and (s == 1).any():
+        p0 = probs[idx][s == 0].mean()
+        p1 = probs[idx][s == 1].mean()
+        return (p0 - p1).pow(2)
+    return probs.new_zeros(())
+
+def _blend(A_base: SparseTensor, edge_adder: EdgeAdder | None):
+    """Return blended SparseTensor A = A_base (+ soft edges if provided)."""
+    return (A_base + edge_adder.sparse_tensor()).coalesce() if edge_adder is not None else A_base
+
+def _reduce_losses(loss_list: list[torch.Tensor], method: str = "max", tau: float = 0.5):
+    """Hard max or smooth max (log-sum-exp)."""
+    if len(loss_list) == 0:
+        raise ValueError("Empty loss list.")
+    L = torch.stack(loss_list)
+    if method == "logsumexp":
+        return tau * torch.logsumexp(L / tau, dim=0)
+    return torch.max(L, dim=0)[0]
+
+@torch.no_grad()
+def _eval_on_graph(backbone, clf, X, A, Y, idx, data):
+    H = backbone(X, A)
+    logits = clf(H).squeeze(1)
+    pred = (logits > 0).long()
+    return get_metrics(Y, logits, pred=pred, idx=idx, data=data)
+
+
+def run_edge_adder_unified(args, data, seed_dir):
+    """
+    Unified trainer for:
+      - Baseline edge-adder (single policy using make_cross_group_candidates)
+      - Min–max over five policies (policies.build_five_policies)
+    Picked by flags: --model edge_adder [baseline] vs --model edge_minmax or --minmax [min–max]
+    """
+    t0 = time.time()
+    device = args.device
+    X, Y, EI = data.features, data.labels, data.edge_index
+    idx_tr, idx_va, idx_te = data.idx_train, data.idx_val, data.idx_test
+    in_dim, out_dim = X.size(1), 1
+
+    # backbone + head
+    backbone = ConstructModel(in_dim, args.hid_dim, args.encoder, args.layer_num).to(device)
+    clf = torch.nn.Linear(args.hid_dim, out_dim).to(device)
+
+    # Build policies of non-edge pair selection
+    use_minmax = args.model == "edge_minmax"
+    policies: dict[str, EdgeAdder] = {}
+
+    if use_minmax:
+        pol_pairs = build_policies(
+            X, data.sens, EI,
+            policy_names=getattr(args, "policy_names", []),
+            k_per_node=getattr(args, "edge_k", 2),
+            seed=getattr(args, "start_seed", 42)
+        )
+        for name, pairs in pol_pairs.items():
+            if pairs.numel() > 0:
+                policies[name] = EdgeAdder(X.size(0), pairs.to(device)).to(device)
+    else:
+        # Baseline single policy
+        cand_ij = make_cross_group_candidates(
+            X, data.sens, EI, k_per_node=getattr(args, "edge_k", 2), device=device
+        )
+        if cand_ij.numel() > 0:
+            policies["baseline"] = EdgeAdder(X.size(0), cand_ij.to(device)).to(device)
+    t1 = time.time()
+    print(f"Policy construction time: {t1 - t0:.2f} seconds.")
+
+    # params & optim
+    params = list(backbone.parameters()) + list(clf.parameters())
+    for ed in policies.values():
+        params += list(ed.parameters())
+    optimizer = torch.optim.Adam(params, lr=args.lr, weight_decay=args.weight_decay)
+
+    lam_dp  = float(getattr(args, "lambda_dp", 0.1))
+    lam_l1  = float(getattr(args, "lambda_edge_l1", 1e-4))
+    reduce  =       getattr(args, "max_reduce", "max")
+    tau     = float(getattr(args, "lse_tau", 0.5))
+
+    t1 = time.time()
+    print(f"Total setup time: {t1 - t0:.2f} seconds. Training for {args.epochs} epochs...")
+
+    pbar = tqdm(range(args.epochs), desc=f"{args.dataset}-{args.encoder}-{'edge_minmax' if use_minmax else 'edge_add'}")
+    best = {'score': -1e9, 'state': None}
+    elog = EpochLogger(seed_dir, model=("edge_minmax" if use_minmax else "edge_adder"))
+
+    for ep in pbar:
+        backbone.train()
+        clf.train()
+        optimizer.zero_grad()
+
+        if len(policies) == 0:
+            raise ValueError("No policies constructed; cannot proceed with edge adder training.")
+        else:
+            # Compute per-policy losses and reduce by max/logsumexp
+            loss_list = []
+            for name, ed in policies.items():
+                A_blend = _blend(EI, ed)
+                H = backbone(X, A_blend)
+                logits = clf(H).squeeze(1)
+                bce = F.binary_cross_entropy_with_logits(logits[idx_tr], Y[idx_tr].float())
+                dp  = _soft_dp_from_logits(logits, data.sens, idx_tr)
+                l1  = ed.weights().sum()
+                loss_list.append(bce + lam_dp * dp + lam_l1 * l1)
+            loss = _reduce_losses(loss_list, method=reduce, tau=tau)
+
+        with torch.no_grad():
+            auc_tr, f1_tr, acc_tr, dp_tr, eo_tr = _eval_on_graph(backbone, clf, X, EI, Y, idx_tr, data)
+            elog.log(ep, "train", {
+                "loss_all": float(loss.item()),
+                "auc": auc_tr, "f1": f1_tr, "acc": acc_tr,
+                "dp": dp_tr, "eo": eo_tr
+            })
+
+        loss.backward()
+        optimizer.step()
+
+        # Validation on base graph
+        backbone.eval()
+        clf.eval()
+        with torch.no_grad():
+            auc, f1, acc, dp, eo = _eval_on_graph(backbone, clf, X, EI, Y, idx_va, data)
+
+        score = auc - dp - eo
+        if score > best['score']:
+            best['score'] = score
+            best['state'] = {'backbone': backbone.state_dict(), 'clf': clf.state_dict()}
+        elog.log(ep, "val", {
+            "loss_all": float(loss.item()),
+            "auc": auc, "f1": f1, "acc": acc,
+            "dp": dp, "eo": eo
+        })
+
+        if (ep+1) % args.log_interval == 0:
+            pbar.set_postfix(
+                loss=f"{float(loss):.3f}",
+                auc=f"{auc:.3f}", f1=f"{f1:.3f}", acc=f"{acc:.3f}",
+                dp=f"{dp:.3f}", eo=f"{eo:.3f}"
+            )
+
+    # Test on base graph with best checkpoint
+    if best['state'] is not None:
+        backbone.load_state_dict(best['state']['backbone'])
+        clf.load_state_dict(best['state']['clf'])
+
+    backbone.eval()
+    clf.eval()
+    with torch.no_grad():
+        auc_t, f1_t, acc_t, dp_t, eo_t = _eval_on_graph(backbone, clf, X, EI, Y, idx_te, data)
+
+    elog.log(args.epochs, "test", {
+        'auc': auc_t, 'f1': f1_t, 'acc': acc_t,
+        'dp': dp_t, 'eo': eo_t
+    })
+    elog.close()
+
+    print(f"[TEST] AUC {auc_t:.4f}  F1 {f1_t:.4f}  ACC {acc_t:.4f}  DP {dp_t:.4f}  EO {eo_t:.4f}")
+    return auc_t, f1_t, acc_t, dp_t, eo_t
+
+
 def run_vanilla(args, data, seed_dir):
     # Basic setup
     seed = int(seed_dir.split('seed_')[-1])
@@ -253,11 +417,13 @@ def main(args):
         args.seed_dir = os.path.join(args.log_dir, f'seed_{seed}')
         os.makedirs(args.seed_dir, exist_ok=True)
 
-        if args.model == "fairinv":
+        if args.model == "vanilla":
+            auc, f1, acc, dp, eo = run_vanilla(args, data, args.seed_dir)
+        elif args.model == "fairinv":
             pbar = tqdm(total=args.epochs, desc=f"Seed {seed}", unit="epoch", bar_format="{l_bar}{bar:30}{r_bar}")
             auc, f1, acc, dp, eo = run_fairinv(args, data, pbar)
-        elif args.model == "vanilla" or args.model == "edge_adder":
-            auc, f1, acc, dp, eo = run_vanilla(args, data, args.seed_dir)
+        elif args.model in ["edge_adder", "edge_minmax"]:
+            auc, f1, acc, dp, eo = run_edge_adder_unified(args, data, args.seed_dir)
         else:
             raise ValueError("Invalid mode. Choose 'fairinv' or 'vanilla'.")
         results.auc[s, :], results.f1[s, :], results.acc[s, :], \
