@@ -1,4 +1,4 @@
-import ipdb, time, random, os
+import ipdb, time, random, os, json
 import argparse
 import numpy as np
 import torch
@@ -145,6 +145,7 @@ def run_edge_adder_unified(args, data, seed_dir):
     """
     t0 = time.time()
     device = args.device
+    seed = int(seed_dir.split('seed_')[-1])
     X, Y, EI = data.features, data.labels, data.edge_index
     idx_tr, idx_va, idx_te = data.idx_train, data.idx_val, data.idx_test
     in_dim, out_dim = X.size(1), 1
@@ -162,7 +163,7 @@ def run_edge_adder_unified(args, data, seed_dir):
             X, data.sens, EI,
             policy_names=getattr(args, "policy_names", []),
             k_per_node=getattr(args, "edge_k", 2),
-            seed=getattr(args, "start_seed", 42)
+            seed=seed
         )
         for name, pairs in pol_pairs.items():
             if pairs.numel() > 0:
@@ -219,8 +220,14 @@ def run_edge_adder_unified(args, data, seed_dir):
             auc_tr, f1_tr, acc_tr, dp_tr, eo_tr = _eval_on_graph(backbone, clf, X, EI, Y, idx_tr, data)
             elog.log(ep, "train", {
                 "loss_all": float(loss.item()),
-                "auc": auc_tr, "f1": f1_tr, "acc": acc_tr,
-                "dp": dp_tr, "eo": eo_tr
+                "loss_bce": float(bce.item()),
+                "loss_dp": float(dp.item()),
+                "loss_l1": float(l1.item()),
+                "auc": auc_tr,
+                "f1": f1_tr,
+                "acc": acc_tr,
+                "dp": dp_tr,
+                "eo": eo_tr
             })
 
         loss.backward()
@@ -315,7 +322,7 @@ def run_vanilla(args, data, seed_dir):
                 "loss_all": float(loss.item()),
                 "loss_bce": float(loss_bce.item()),
                 "loss_dp": float(loss_dp.item()) if loss_dp is not None else None,
-                "l1": float(l1.item()) if l1 is not None else None,
+                "loss_l1": float(l1.item()) if l1 is not None else None,
                 # metrics (train)
                 "auc": auc_tr,
                 "f1": f1_tr,
@@ -357,7 +364,7 @@ def run_vanilla(args, data, seed_dir):
             'loss_all': float(loss_val_total.item()),
             'loss_bce': float(loss_bce_val.item()),
             'loss_dp': float(loss_dp_val.item()) if loss_dp_val is not None else None,
-            'l1': float(l1_val.item()) if l1_val is not None and torch.is_tensor(l1_val) else (float(l1_val) if l1_val is not None else None),
+            'loss_l1': float(l1_val.item()) if l1_val is not None and torch.is_tensor(l1_val) else (float(l1_val) if l1_val is not None else None),
             # metrics (val)
             'auc': auc,
             'f1': f1,
@@ -398,6 +405,19 @@ def run_vanilla(args, data, seed_dir):
     print(f"[TEST] AUC: {auc_test:.4f}  F1: {f1_test:.4f}  ACC: {acc_test:.4f}  DP: {dp_test:.4f}  EO: {eo_test:.4f}")
     return auc_test, f1_test, acc_test, dp_test, eo_test
 
+def load_best_overall_into_args(args):
+    """If args.best_overall_path is set, override key HPs from its 'params'."""
+    if not getattr(args, "best_overall_path", ""):
+        return args
+    with open(args.best_overall_path, "r") as f:
+        obj = json.load(f)
+    print("Loaded best overall parameters from:", args.best_overall_path)
+    params = obj.get("params", {})
+    for k in params:
+        setattr(args, k, params[k])
+    print(args)
+    return args
+
 def main(args):
     model_num = 1
     results = Results(args.seed_num, model_num, args)
@@ -425,7 +445,7 @@ def main(args):
         elif args.model in ["edge_adder", "edge_minmax"]:
             auc, f1, acc, dp, eo = run_edge_adder_unified(args, data, args.seed_dir)
         else:
-            raise ValueError("Invalid mode. Choose 'fairinv' or 'vanilla'.")
+            raise ValueError("Invalid mode.")
         results.auc[s, :], results.f1[s, :], results.acc[s, :], \
             results.parity[s, :], results.equality[s, :] = auc, f1, acc, dp, eo
 
@@ -434,7 +454,8 @@ def main(args):
         results.save_results(args)
 
 if __name__ == '__main__':
-    args = get_args()
     if torch.cuda.is_available():
         torch.multiprocessing.set_start_method('spawn')
+    args = get_args()
+    args = load_best_overall_into_args(args)
     main(args)
