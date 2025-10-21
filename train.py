@@ -415,6 +415,9 @@ def load_best_overall_into_args(args):
     params = obj.get("params", {})
     for k in params:
         setattr(args, k, params[k])
+    if args.layer_num == 3:
+        print("Setting layer_num to 2")
+        setattr(args, "layer_num", 2)
     print(args)
     return args
 
