@@ -70,7 +70,8 @@ def _random_pairs(idx_a: Tensor, idx_b: Tensor, per_node: int, Aset: set, device
             continue
         m = min(per_node, len(cand))
         pick = random.sample(cand, m)
-        i_all.extend([u]*m); j_all.extend(pick)
+        i_all.extend([u]*m)
+        j_all.extend(pick)
     if not i_all:
         return (torch.empty(0, dtype=torch.long, device=device),
                 torch.empty(0, dtype=torch.long, device=device))

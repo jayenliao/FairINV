@@ -36,9 +36,14 @@ def get_args():
                         help='the number for partitioning the sensitive attribute group.')
 
     # edge adder specific
-    parser.add_argument('--edge_k', type=int, default=2, help='#cross-group candidates per node.')
+    parser.add_argument('--edge_k', type=int, default=2, help='#candidate pairs per node.')
     parser.add_argument('--lambda_dp', type=float, default=0.1, help='Weight for soft demographic parity loss.')
+    parser.add_argument('--lambda_eo', type=float, default=0.0, help='Weight for soft equal opportunity loss.')
     parser.add_argument('--lambda_edge_l1', type=float, default=1e-4, help='L1 sparsity on learnable edges.')
+    parser.add_argument('--adv_reduce_exclude_l1', action='store_true',
+                        help='When picking the worst policy, exclude L1 from the per-policy objective.')
+    parser.add_argument('--scale_lambda', type=int, default=2,
+                        help='Scale up lambda_dp and lambda_eo by this factor to match the magnitude of BCE loss.')
 
     # edge minmax specific
     parser.add_argument("--policy_names", nargs='+',
@@ -46,6 +51,10 @@ def get_args():
                         help="Edge selection policies to use.")
     parser.add_argument('--max_reduce', type=str, choices=['max','logsumexp'], default='max')
     parser.add_argument('--lse_tau', type=float, default=0.5)
+
+    # load tuned HPs from Optuna output
+    parser.add_argument('--best_overall_path', type=str, default='',
+                        help='Path to an Optuna best_overall.json; if set, override lr/weight_decay/.. from it.')
 
     args = parser.parse_known_args()[0]
     args.cuda = not args.no_cuda and torch.cuda.is_available()

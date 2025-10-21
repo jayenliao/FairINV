@@ -115,6 +115,32 @@ def _soft_dp_from_logits(logits: torch.Tensor, sens: torch.Tensor, idx: torch.Te
         return (p0 - p1).pow(2)
     return probs.new_zeros(())
 
+def _soft_eo_from_logits(logits: torch.Tensor,
+                         labels: torch.Tensor,
+                         sens: torch.Tensor,
+                         idx: torch.Tensor):
+    """
+    Soft equal opportunity on a subset (condition on Y=1, no thresholding).
+    Returns (E[p̂ | S=0, Y=1] - E[p̂ | S=1, Y=1])^2 where p̂ = sigmoid(logit).
+    Gracefully returns 0 if any group lacks positives.
+    """
+    probs = torch.sigmoid(logits)              # [N]
+    idx = idx.long().to(labels.device)
+    y_sub = labels[idx].long()                 # [|idx|]
+    pos_mask = (y_sub == 1)                    # mask within idx
+    if not pos_mask.any():
+        return probs.new_zeros(())
+
+    idx_pos = idx[pos_mask]                    # indices with Y=1
+    s_pos = sens[idx_pos].long()               # sens for positives
+    if (s_pos == 0).any() and (s_pos == 1).any():
+        p_pos = probs[idx_pos]                 # predicted prob among Y=1
+        p0 = p_pos[s_pos == 0].mean()
+        p1 = p_pos[s_pos == 1].mean()
+        return (p0 - p1).pow(2)
+
+    return probs.new_zeros(())
+
 def _blend(A_base: SparseTensor, edge_adder: EdgeAdder | None):
     """Return blended SparseTensor A = A_base (+ soft edges if provided)."""
     return (A_base + edge_adder.sparse_tensor()).coalesce() if edge_adder is not None else A_base
@@ -185,6 +211,7 @@ def run_edge_adder_unified(args, data, seed_dir):
     optimizer = torch.optim.Adam(params, lr=args.lr, weight_decay=args.weight_decay)
 
     lam_dp  = float(getattr(args, "lambda_dp", 0.1))
+    lam_eo  = float(getattr(args, "lambda_eo", 0.0))
     lam_l1  = float(getattr(args, "lambda_edge_l1", 1e-4))
     reduce  =       getattr(args, "max_reduce", "max")
     tau     = float(getattr(args, "lse_tau", 0.5))
@@ -205,24 +232,43 @@ def run_edge_adder_unified(args, data, seed_dir):
             raise ValueError("No policies constructed; cannot proceed with edge adder training.")
         else:
             # Compute per-policy losses and reduce by max/logsumexp
-            loss_list = []
+            loss_list = []          # total objective per policy (for backprop reduce)
+            train_perpol = []       # store components for logging (no grad used for logging)
             for name, ed in policies.items():
                 A_blend = _blend(EI, ed)
                 H = backbone(X, A_blend)
                 logits = clf(H).squeeze(1)
-                bce = F.binary_cross_entropy_with_logits(logits[idx_tr], Y[idx_tr].float())
-                dp  = _soft_dp_from_logits(logits, data.sens, idx_tr)
-                l1  = ed.weights().sum()
-                loss_list.append(bce + lam_dp * dp + lam_l1 * l1)
+                loss_bce = F.binary_cross_entropy_with_logits(logits[idx_tr], Y[idx_tr].float())
+                loss_dp  = _soft_dp_from_logits(logits, data.sens, idx_tr)
+                loss_eo  = _soft_eo_from_logits(logits, Y, data.sens, idx_tr)
+                loss_l1  = ed.weights().abs().sum()
+                loss_total = loss_bce + (lam_dp * loss_dp) + (lam_eo * loss_eo) + (lam_l1 * loss_l1)
+                loss_list.append(loss_total)
+                train_perpol.append({
+                    "policy": name,
+                    "loss_bce": float(loss_bce.detach().cpu().item()),
+                    "loss_dp":  float(loss_dp.detach().cpu().item()),
+                    "loss_eo":  float(loss_eo.detach().cpu().item()),
+                    "loss_l1":  float(loss_l1.detach().cpu().item()),
+                    "loss_total": float(loss_total.detach().cpu().item()),
+                })
             loss = _reduce_losses(loss_list, method=reduce, tau=tau)
 
         with torch.no_grad():
+            # pick the *worst* policy by the training objective for logging components
+            loss_tensor = torch.tensor([x["loss_total"] for x in train_perpol], device=args.device)
+            worst_tr_idx = int(torch.argmax(loss_tensor).item())
+            worst_tr = train_perpol[worst_tr_idx]
             auc_tr, f1_tr, acc_tr, dp_tr, eo_tr = _eval_on_graph(backbone, clf, X, EI, Y, idx_tr, data)
             elog.log(ep, "train", {
-                "loss_all": float(loss.item()),
-                "loss_bce": float(bce.item()),
-                "loss_dp": float(dp.item()),
-                "loss_l1": float(l1.item()),
+                # losses (train)
+                "policy":   worst_tr["policy"],
+                "loss_total": worst_tr["loss_total"],
+                "loss_bce": worst_tr["loss_bce"],
+                "loss_dp":  worst_tr["loss_dp"],
+                "loss_eo":  worst_tr["loss_eo"],
+                "loss_l1":  worst_tr["loss_l1"],
+                # metrics (train)
                 "auc": auc_tr,
                 "f1": f1_tr,
                 "acc": acc_tr,
@@ -239,21 +285,51 @@ def run_edge_adder_unified(args, data, seed_dir):
         with torch.no_grad():
             auc, f1, acc, dp, eo = _eval_on_graph(backbone, clf, X, EI, Y, idx_va, data)
 
+            val_losses = []   # objective per policy (BCE + λ_dp*DP + λ_eo*EO + λ_l1*L1)
+            perpol_val = []   # components + metrics per policy (for logging & selection)
+
+            for name, ed in policies.items():
+                A_val = _blend(EI, ed)
+                H_val = backbone(X, A_val)
+                logit_val = clf(H_val).squeeze(1)
+                loss_bce_v = F.binary_cross_entropy_with_logits(logit_val[idx_tr], Y[idx_tr].float())
+                loss_dp_v  = _soft_dp_from_logits(logit_val, data.sens, idx_tr)
+                loss_eo_v  = _soft_eo_from_logits(logit_val, Y, data.sens, idx_tr)
+                loss_l1_v  = ed.weights().abs().sum()
+                obj_v = loss_bce_v + (lam_dp * loss_dp_v) + (lam_eo * loss_eo_v) + (lam_l1 * loss_l1_v)
+                val_losses.append(obj_v)
+                perpol_val.append({
+                    "policy": name,
+                    "loss_bce": float(loss_bce_v.detach().cpu().item()),
+                    "loss_dp":  float(loss_dp_v.detach().cpu().item()),
+                    "loss_eo":  float(loss_eo_v.detach().cpu().item()),
+                    "loss_l1":  float(loss_l1_v.detach().cpu().item()),
+                    "loss_total": float(obj_v.detach().cpu().item()),
+                })
+        worst_obj_idx = int(torch.argmax(torch.stack(val_losses)).item())
+        worst_obj = perpol_val[worst_obj_idx]
+        worst_obj["auc"] = auc
+        worst_obj["f1"]  = f1
+        worst_obj["acc"] = acc
+        worst_obj["dp"]  = dp
+        worst_obj["eo"]  = eo
+        elog.log(ep, "val", worst_obj)
+
         score = auc - dp - eo
         if score > best['score']:
             best['score'] = score
             best['state'] = {'backbone': backbone.state_dict(), 'clf': clf.state_dict()}
-        elog.log(ep, "val", {
-            "loss_all": float(loss.item()),
-            "auc": auc, "f1": f1, "acc": acc,
-            "dp": dp, "eo": eo
-        })
 
         if (ep+1) % args.log_interval == 0:
             pbar.set_postfix(
                 loss=f"{float(loss):.3f}",
-                auc=f"{auc:.3f}", f1=f"{f1:.3f}", acc=f"{acc:.3f}",
-                dp=f"{dp:.3f}", eo=f"{eo:.3f}"
+                loss_bce=f"{worst_tr['loss_bce']:.3f}",
+                loss_dp=f"{worst_tr['loss_dp']:.3f}",
+                loss_eo=f"{worst_tr['loss_eo']:.3f}",
+                loss_l1=f"{worst_tr['loss_l1']:.3f}",
+                policy=worst_tr['policy'],
+                # auc=f"{auc:.3f}", f1=f"{f1:.3f}", acc=f"{acc:.3f}",
+                # dp=f"{dp:.3f}", eo=f"{eo:.3f}"
             )
 
     # Test on base graph with best checkpoint
@@ -319,7 +395,7 @@ def run_vanilla(args, data, seed_dir):
             )
             metrics_train = {
                 # losses (train)
-                "loss_all": float(loss.item()),
+                "loss_total": float(loss.item()),
                 "loss_bce": float(loss_bce.item()),
                 "loss_dp": float(loss_dp.item()) if loss_dp is not None else None,
                 "loss_l1": float(l1.item()) if l1 is not None else None,
@@ -361,7 +437,7 @@ def run_vanilla(args, data, seed_dir):
 
         metrics_val = {
             # losses (val)
-            'loss_all': float(loss_val_total.item()),
+            'loss_total': float(loss_val_total.item()),
             'loss_bce': float(loss_bce_val.item()),
             'loss_dp': float(loss_dp_val.item()) if loss_dp_val is not None else None,
             'loss_l1': float(l1_val.item()) if l1_val is not None and torch.is_tensor(l1_val) else (float(l1_val) if l1_val is not None else None),
@@ -407,6 +483,7 @@ def run_vanilla(args, data, seed_dir):
 
 def load_best_overall_into_args(args):
     """If args.best_overall_path is set, override key HPs from its 'params'."""
+
     if not getattr(args, "best_overall_path", ""):
         return args
     with open(args.best_overall_path, "r") as f:
@@ -415,9 +492,14 @@ def load_best_overall_into_args(args):
     params = obj.get("params", {})
     for k in params:
         setattr(args, k, params[k])
+
+    if args.lambda_eo == -1.0:
+        print("Setting lambda_eo to lambda_dp")
+        setattr(args, "lambda_eo", args.lambda_dp)
     if args.layer_num == 3:
         print("Setting layer_num to 2")
         setattr(args, "layer_num", 2)
+
     print(args)
     return args
 

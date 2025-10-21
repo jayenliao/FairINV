@@ -24,11 +24,11 @@ class EpochLogger:
         self._csv_fieldnames = ["timestamp", "epoch", "split"]
         self._csv_fieldnames += ["acc", "auc", "f1", "dp", "eo"]
         if model == "vanilla":
-            self._csv_fieldnames += ["loss_all", "l1"]
+            self._csv_fieldnames += ["loss_total", "loss_bce"]
         elif model == "fairinv":
-            self._csv_fieldnames += ['loss_all', 'loss_cls', 'loss_irm', 'loss_cls_all']
-        elif model == "edge_adder":
-            self._csv_fieldnames += ["loss_all", "loss_bce", "loss_dp", "l1"]
+            self._csv_fieldnames += ['loss_total', 'loss_bce', 'loss_irm', 'loss_cls_all']
+        elif model == "edge_adder" or model == "edge_minmax":
+            self._csv_fieldnames += ["loss_total", "loss_bce", "loss_dp", "loss_eo", "loss_l1"]
 
     def log(self, epoch: int, split: str, metrics: Dict[str, Any]):
         """
