@@ -71,15 +71,31 @@ def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     return torch.sparse.FloatTensor(indices, values, shape)
 
 
-def fair_metric(pred, labels, sens):
+def fair_metric(pred, labels, sens, eo_neg=False) -> tuple:
     idx_s0 = sens==0
     idx_s1 = sens==1
     idx_s0_y1 = np.bitwise_and(idx_s0, labels==1)
     idx_s1_y1 = np.bitwise_and(idx_s1, labels==1)
-    parity = abs(sum(pred[idx_s0])/sum(idx_s0)-sum(pred[idx_s1])/sum(idx_s1))
-    equality = abs(sum(pred[idx_s0_y1])/sum(idx_s0_y1)-sum(pred[idx_s1_y1])/sum(idx_s1_y1))
-    return parity.item(), equality.item()
+    idx_s0_y0 = np.bitwise_and(idx_s0, labels==0)
+    idx_s1_y0 = np.bitwise_and(idx_s1, labels==0)
+    parity = abs(sum(pred[idx_s0]) / sum(idx_s0) - sum(pred[idx_s1]) / sum(idx_s1))
+    equality = abs(sum(pred[idx_s0_y1]) / sum(idx_s0_y1) - sum(pred[idx_s1_y1]) / sum(idx_s1_y1))
+    if eo_neg:
+        equality_neg = abs(sum(pred[idx_s0_y0]) / sum(idx_s0_y0) - sum(pred[idx_s1_y0]) / sum(idx_s1_y0))
+        return parity.item(), equality.item(), equality_neg.item()
+    else:
+        return parity.item(), equality.item()
 
+def get_metrics(Y, logit, pred, idx, data):
+    auc = roc_auc_score(Y[idx].cpu(), logit[idx].cpu())
+    f1  = f1_score(Y[idx].cpu(), pred[idx].cpu())
+    acc = accuracy_score(Y[idx].cpu(), pred[idx].cpu())
+    dp, eo = fair_metric(
+        pred[idx].cpu().numpy(),
+        Y[idx].cpu().numpy(),
+        data.sens[idx].cpu().numpy()
+    )
+    return auc, f1, acc, dp, eo
 
 class Results:
     def __init__(self, seed_num, model_num, args):
@@ -145,13 +161,3 @@ class Results:
             #     json.dump(ret_dict, file, indent=4, ensure_ascii=False)
             #     file.write('\n')
 
-def get_metrics(Y, logit, pred, idx, data):
-    auc = roc_auc_score(Y[idx].cpu(), logit[idx].cpu())
-    f1  = f1_score(Y[idx].cpu(), pred[idx].cpu())
-    acc = accuracy_score(Y[idx].cpu(), pred[idx].cpu())
-    dp, eo = fair_metric(
-        pred[idx].cpu().numpy(),
-        Y[idx].cpu().numpy(),
-        data.sens[idx].cpu().numpy()
-    )
-    return auc, f1, acc, dp, eo
