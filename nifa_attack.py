@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import dgl
 import dgl.function as fn
-from nifa_model import *
 import random
+from nifa_model import GCN
 
 class Bayesian_Network(nn.Module):
     def __init__(self, in_dim, hid_dim, out_dim, T, theta, device):

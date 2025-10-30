@@ -24,7 +24,8 @@ def set_seed(seed, use_cuda:bool):
     if use_cuda:
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
-
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     # torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
 
@@ -71,7 +72,7 @@ def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     return torch.sparse.FloatTensor(indices, values, shape)
 
 
-def fair_metric(pred, labels, sens, eo_neg=False) -> tuple:
+def fair_metric(pred, labels, sens, neg=False) -> tuple:
     idx_s0 = sens==0
     idx_s1 = sens==1
     idx_s0_y1 = np.bitwise_and(idx_s0, labels==1)
@@ -80,20 +81,22 @@ def fair_metric(pred, labels, sens, eo_neg=False) -> tuple:
     idx_s1_y0 = np.bitwise_and(idx_s1, labels==0)
     parity = abs(sum(pred[idx_s0]) / sum(idx_s0) - sum(pred[idx_s1]) / sum(idx_s1))
     equality = abs(sum(pred[idx_s0_y1]) / sum(idx_s0_y1) - sum(pred[idx_s1_y1]) / sum(idx_s1_y1))
-    if eo_neg:
+    if neg:
+        parity_neg = abs(sum(1 - pred[idx_s0]) / sum(idx_s0) - sum(1 - pred[idx_s1]) / sum(idx_s1))
         equality_neg = abs(sum(pred[idx_s0_y0]) / sum(idx_s0_y0) - sum(pred[idx_s1_y0]) / sum(idx_s1_y0))
-        return parity.item(), equality.item(), equality_neg.item()
+        return (parity.item() + parity_neg.item()) / 2, (equality.item() + equality_neg.item()) / 2
     else:
         return parity.item(), equality.item()
 
-def get_metrics(Y, logit, pred, idx, data):
+def get_metrics(Y, logit, pred, idx, data, neg):
     auc = roc_auc_score(Y[idx].cpu(), logit[idx].cpu())
     f1  = f1_score(Y[idx].cpu(), pred[idx].cpu())
     acc = accuracy_score(Y[idx].cpu(), pred[idx].cpu())
     dp, eo = fair_metric(
         pred[idx].cpu().numpy(),
         Y[idx].cpu().numpy(),
-        data.sens[idx].cpu().numpy()
+        data.sens[idx].cpu().numpy(),
+        neg=neg
     )
     return auc, f1, acc, dp, eo
 

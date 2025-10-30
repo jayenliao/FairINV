@@ -6,6 +6,10 @@ from torch_sparse import SparseTensor
 from nifa_attack import Attacker  # uses nifa_model.GCN internally
 # NOTE: nifa_attack imports nifa_model (patched below)
 
+def _sparse_edge_count(A: SparseTensor) -> int:
+    r, c, _ = A.coo()
+    return int(r.numel())
+
 def _to_dgl_from_fair(data):
     """Convert FairDataset (PyG/SparseTensor) -> DGLGraph with required node data."""
     N = data.features.size(0)
@@ -40,6 +44,10 @@ def apply_nifa_attack(args, data):
     2) Run NIFA attacker
     3) Convert attacked graph -> back to FairINV data object
     """
+    # --- before stats (on the FairINV side)
+    N0 = int(data.features.size(0))
+    E0 = _sparse_edge_count(data.edge_index)
+
     device = args.device
     g = _to_dgl_from_fair(data)
     g = g.to(device)
@@ -73,4 +81,23 @@ def apply_nifa_attack(args, data):
     # The injected nodes have label = -1 and are *not* in the split;
     # they only affect message passing (as intended).
     _update_fair_from_dgl(data, g_poison, device)
+    N1 = int(data.features.size(0))
+    E1 = _sparse_edge_count(data.edge_index)
+
+    injected_nodes = int((data.labels < 0).logical_and(data.sens < 0).sum().item())
+    print(f"[NIFA] Nodes {N0} -> {N1}  (+{N1-N0}) | "
+          f"Edges {E0} -> {E1}  (+{E1-E0}) | "
+          f"Injected node markers found: {injected_nodes}")
+
+        # hard sanity checks
+    assert N1 >= N0, "Node count decreased after attack — impossible."
+    assert E1 >= E0, "Edge count did not increase after attack — check Edge_Attack."
+    assert injected_nodes == (N1 - N0), \
+        "Injected nodes not marked with label=-1 & sensitive=-1; verify Edge/Feature_Attack."
+
+    # splits must stay on original nodes
+    assert int(data.idx_train.max()) < N0
+    assert int(data.idx_val.max())   < N0
+    assert int(data.idx_test.max())  < N0
+
     return data

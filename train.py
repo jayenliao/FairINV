@@ -1,4 +1,4 @@
-import ipdb, time, random, os, json
+import ipdb, time, random, os, json, copy
 import argparse
 import numpy as np
 import torch
@@ -16,6 +16,38 @@ from policies import build_policies
 from models import ConstructModel, FairINV, EdgeAdder
 from logger import EpochLogger
 from nifa_bridge import apply_nifa_attack
+from torch_sparse import SparseTensor
+from types import SimpleNamespace
+
+def snapshot_clean_data(data):
+    """Lightweight immutable snapshot on CPU; safe for per-seed restores."""
+    snap = {
+        "features":   data.features.detach().cpu().clone(),
+        "labels":     data.labels.detach().cpu().clone(),
+        "sens":       data.sens.detach().cpu().clone(),
+        "edge_index": data.edge_index_nor.detach().cpu().clone(),  # (2,E)
+        "idx_train":  data.idx_train.detach().cpu().clone(),
+        "idx_val":    data.idx_val.detach().cpu().clone(),
+        "idx_test":   data.idx_test.detach().cpu().clone(),
+    }
+    return snap
+
+def restore_from_snapshot(snap, device):
+    """New data object with tensors moved to device and SparseTensor rebuilt."""
+    data = SimpleNamespace()
+    data.features   = snap["features"].to(device)
+    data.labels     = snap["labels"].to(device).long()
+    data.sens       = snap["sens"].to(device).float()
+    data.edge_index_nor = snap["edge_index"].to(device).long()
+    N = int(data.features.size(0))
+    data.edge_index = SparseTensor.from_edge_index(
+        data.edge_index_nor, sparse_sizes=(N, N)
+    ).coalesce()
+    data.idx_train  = snap["idx_train"].to(device).long()
+    data.idx_val    = snap["idx_val"].to(device).long()
+    data.idx_test   = snap["idx_test"].to(device).long()
+    return data
+
 
 def make_cross_group_candidates(features: torch.Tensor,
                                 sens: torch.Tensor,
@@ -88,7 +120,8 @@ def run_fairinv(args, data, pbar):
         logit=output,
         pred=pred,
         idx=data.idx_test,
-        data=data
+        data=data,
+        neg=args.use_neg_metrics
     )
     metrics_test = {
         'auc': auc_test,
@@ -160,7 +193,7 @@ def _eval_on_graph(backbone, clf, X, A, Y, idx, data):
     H = backbone(X, A)
     logits = clf(H).squeeze(1)
     pred = (logits > 0).long()
-    return get_metrics(Y, logits, pred=pred, idx=idx, data=data)
+    return get_metrics(Y, logits, pred=pred, idx=idx, data=data, neg=args.use_neg_metrics)
 
 
 def run_edge_adder_unified(args, data, seed_dir):
@@ -392,7 +425,7 @@ def run_vanilla(args, data, seed_dir):
         with torch.no_grad():
             pred_tr = (logits > 0).long()
             auc_tr, f1_tr, acc_tr, dp_tr, eo_tr = get_metrics(
-                Y, logits, pred=pred_tr, idx=idx_tr, data=data
+                Y, logits, pred=pred_tr, idx=idx_tr, data=data, neg=args.use_neg_metrics
             )
             metrics_train = {
                 # losses (train)
@@ -425,7 +458,7 @@ def run_vanilla(args, data, seed_dir):
 
         pred_val = (logit_val > 0).long()
         auc, f1, acc, dp, eo = get_metrics(
-            Y, logit_val, pred=pred_val, idx=idx_va, data=data
+            Y, logit_val, pred=pred_val, idx=idx_va, data=data, neg=args.use_neg_metrics
         )
 
         score = auc - dp - eo
@@ -467,7 +500,7 @@ def run_vanilla(args, data, seed_dir):
     pred_t = (logit_t > 0).long()
 
     auc_test, f1_test, acc_test, dp_test, eo_test = get_metrics(
-        Y, logit_t, pred=pred_t, idx=idx_te, data=data
+        Y, logit_t, pred=pred_t, idx=idx_te, data=data, neg=args.use_neg_metrics
     )
     metrics_test = {
         'auc': auc_test,
@@ -516,16 +549,28 @@ def main(args):
     data = FairDataset(args.dataset, args.device)
     data.load_data()
     data.info()
-
-    if getattr(args, "attack", "none") == "nifa":
-        print("[NIFA] Applying node+edge injection attack before training...")
-        data = apply_nifa_attack(args, data)
+    clean_snap = snapshot_clean_data(data)
 
     for s in range(args.seed_num):
         seed = s + args.start_seed
         set_seed(seed, use_cuda)
         args.seed_dir = os.path.join(args.log_dir, f'seed_{seed}')
         os.makedirs(args.seed_dir, exist_ok=True)
+
+        data = restore_from_snapshot(clean_snap, args.device)
+
+        if getattr(args, "attack", "none") == "nifa":
+            def _A_edges(A: SparseTensor) -> int:
+                r, c, _ = A.coo()
+                return int(r.numel())
+            print("[NIFA] Applying node+edge injection attack before training...")
+            tic = time.time()
+            N0, E0 = int(data.features.size(0)), _A_edges(data.edge_index)
+            print(f"[NIFA pre] N={N0}, E={E0}")
+            data = apply_nifa_attack(args, data)
+            N1, E1 = int(data.features.size(0)), _A_edges(data.edge_index)
+            print(f"[NIFA post] N={N1}, E={E1}, ΔN={N1-N0}, ΔE={E1-E0}")
+            print(f"✓ attack done in {time.time() - tic:.1f}s")
 
         if args.model == "vanilla":
             auc, f1, acc, dp, eo = run_vanilla(args, data, args.seed_dir)

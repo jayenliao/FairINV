@@ -34,6 +34,8 @@ def get_args():
     parser.add_argument('--log_interval', type=int, default=20, help='Interval for logging.')
     parser.add_argument('--partition_times', type=int, default=3,
                         help='the number for partitioning the sensitive attribute group.')
+    parser.add_argument('--use_neg_metrics', action='store_true',
+                        help='Whether to use negative sampling for computing fairness metrics.')
 
     # edge adder specific
     parser.add_argument('--edge_k', type=int, default=2, help='#candidate pairs per node.')

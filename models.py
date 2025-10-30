@@ -157,7 +157,7 @@ class FairINV(nn.Module):
                 pred_all = (output_all.squeeze() > 0).type_as(data.labels)
 
             auc_tr, f1_tr, acc_tr, dp_tr, eo_tr = get_metrics(
-                Y=data.labels, logit=output_all, pred=pred_all, idx=data.idx_train, data=data
+                Y=data.labels, logit=output_all, pred=pred_all, idx=data.idx_train, data=data, neg=args.use_neg_metrics
             )
 
             elog.log(epoch, "train", {
@@ -175,7 +175,7 @@ class FairINV(nn.Module):
 
             # utility performance
             auc_val, f1_val, acc_val, dp_val, eo_val = get_metrics(
-                Y=data.labels, logit=output_all, pred=pred_all, idx=data.idx_val, data=data
+                Y=data.labels, logit=output_all, pred=pred_all, idx=data.idx_val, data=data, neg=args.use_neg_metrics
             )
             elog.log(epoch, "val", {
                 'loss_all': loss_train.item(),
