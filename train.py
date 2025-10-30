@@ -349,7 +349,7 @@ def run_edge_adder_unified(args, data, seed_dir):
     })
     elog.close()
 
-    print(f"[TEST] AUC {auc_t:.4f}  F1 {f1_t:.4f}  ACC {acc_t:.4f}  DP {dp_t:.4f}  EO {eo_t:.4f}")
+    print(f"[TEST seed={seed}] AUC {auc_t:.4f}  F1 {f1_t:.4f}  ACC {acc_t:.4f}  DP {dp_t:.4f}  EO {eo_t:.4f}")
     return auc_t, f1_t, acc_t, dp_t, eo_t
 
 
@@ -454,7 +454,7 @@ def run_vanilla(args, data, seed_dir):
         message = f"loss(bce): {loss.item():.3f}"
         message += f", auc: {auc:.3f}, f1: {f1:.3f}, acc: {acc:.3f}, dp: {dp:.3f}, eo: {eo:.3f}"
         if (ep+1) % args.log_interval == 0:
-            pbar.set_postfix({"Seed": seed, "Epoch": ep+1, "Message": message})
+            pbar.set_postfix({"Metrics": message})
 
     # --- Test with the best checkpoint ---
     backbone.load_state_dict(best['state']['backbone'])
@@ -479,7 +479,7 @@ def run_vanilla(args, data, seed_dir):
     elog.log(args.epochs, "test", metrics_test)
     elog.close()
 
-    print(f"[TEST] AUC: {auc_test:.4f}  F1: {f1_test:.4f}  ACC: {acc_test:.4f}  DP: {dp_test:.4f}  EO: {eo_test:.4f}")
+    print(f"[TEST] (Seed {seed}) AUC: {auc_test:.4f}  F1: {f1_test:.4f}  ACC: {acc_test:.4f}  DP: {dp_test:.4f}  EO: {eo_test:.4f}")
     return auc_test, f1_test, acc_test, dp_test, eo_test
 
 def load_best_overall_into_args(args):
