@@ -15,6 +15,7 @@ from utils import Results, configure_threads, set_seed, get_metrics
 from policies import build_policies
 from models import ConstructModel, FairINV, EdgeAdder
 from logger import EpochLogger
+from nifa_bridge import apply_nifa_attack
 
 def make_cross_group_candidates(features: torch.Tensor,
                                 sens: torch.Tensor,
@@ -515,6 +516,10 @@ def main(args):
     data = FairDataset(args.dataset, args.device)
     data.load_data()
     data.info()
+
+    if getattr(args, "attack", "none") == "nifa":
+        print("[NIFA] Applying node+edge injection attack before training...")
+        data = apply_nifa_attack(args, data)
 
     for s in range(args.seed_num):
         seed = s + args.start_seed

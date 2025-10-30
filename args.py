@@ -56,6 +56,23 @@ def get_args():
     parser.add_argument('--best_overall_path', type=str, default='',
                         help='Path to an Optuna best_overall.json; if set, override lr/weight_decay/.. from it.')
 
+    # --- Attack toggle ---
+    parser.add_argument('--attack', choices=['none', 'nifa'], default='none',
+                        help="Optional pre-training attack pipeline. 'nifa' = node+edge injection (NIFA).")
+
+    # --- NIFA hyperparameters (namespaced to avoid conflicts) ---
+    parser.add_argument('--nifa_T', type=int, default=20)
+    parser.add_argument('--nifa_theta', type=float, default=0.5)
+    parser.add_argument('--nifa_node', type=int, default=102)     # injected nodes
+    parser.add_argument('--nifa_edge', type=int, default=50)      # degree budget (even number)
+    parser.add_argument('--nifa_alpha', type=float, default=1.0)
+    parser.add_argument('--nifa_beta', type=float, default=1.0)
+    parser.add_argument('--nifa_ratio', type=float, default=0.5)  # top-ratio uncertain nodes to target
+    parser.add_argument('--nifa_mode', choices=['uncertainty','degree'], default='uncertainty')
+    parser.add_argument('--nifa_epochs', type=int, default=1000)
+    parser.add_argument('--nifa_lr', type=float, default=0.001)
+    parser.add_argument('--nifa_loops', type=int, default=50)
+
     args = parser.parse_known_args()[0]
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
