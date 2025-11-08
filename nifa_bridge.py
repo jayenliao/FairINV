@@ -80,7 +80,7 @@ def apply_nifa_attack(args, data):
     # IMPORTANT: keep original train/val/test indices (on original nodes).
     # The injected nodes have label = -1 and are *not* in the split;
     # they only affect message passing (as intended).
-    _update_fair_from_dgl(data, g_poison, device)
+    data = _update_fair_from_dgl(data, g_poison, device)
     N1 = int(data.features.size(0))
     E1 = _sparse_edge_count(data.edge_index)
 
