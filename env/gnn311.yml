@@ -1,0 +1,39 @@
+name: gnn311
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip>=24.0
+  - setuptools>=68
+  - wheel
+  - numpy=1.26.*
+  - pandas>=2.1,<2.3
+  - scipy>=1.11,<1.13
+  - scikit-learn>=1.4,<1.6
+  - networkx>=3.1
+  - matplotlib
+  - seaborn
+  - tqdm
+  - ipykernel
+  # PyTorch 2.2 + CUDA 12.1
+  - pytorch=2.2.*
+  - torchvision=0.17.*
+  - torchaudio=2.2.*
+  - pytorch-cuda=12.1
+  - cudnn>=8.9
+  - pip:
+      # PyG wheels for torch 2.2 + cu121
+      - -f https://data.pyg.org/whl/torch-2.2.0+cu121.html
+      - torch-geometric==2.5.*
+      - torch-scatter==2.1.*
+      - torch-sparse==0.6.*
+      - torch-cluster==1.6.*
+      - torch-spline-conv==1.2.*
+      - pyg-lib==0.4.*
+      # DGL cu121 + torchdata
+      - -f https://data.dgl.ai/wheels/cu121/repo.html
+      - dgl==2.1.0+cu121
+      - torchdata==0.6.*
