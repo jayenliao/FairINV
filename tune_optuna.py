@@ -28,7 +28,7 @@ from args import get_args as get_base_args
 from data import FairDataset
 from utils import set_seed
 from utils import configure_threads
-from train import run as run_vanilla_or_edge, run_fairinv
+from train import run_vanilla, run_edge_adder_unified, run_fairinv, load_best_overall_into_args
 
 # -----------------------------
 # Small utils
@@ -53,7 +53,11 @@ def fetch_metric(obj: Dict[str, Any], base: str):
             return obj[k]
     return None
 
-def objective_value(row: Dict[str, Any], objective: str, balanced_on: str, w_dp: float, w_eo: float):
+def objective_value(
+    row: Dict[str, Any], objective: str, balanced_on: str,
+    w_dp: float, w_eo: float,
+    util_on: str = "f1", util_min: float | None = None, lambda_util: float = 1.0
+) -> float:
     if objective == "f1":
         v = fetch_metric(row, "f1")
         return float(v) if v is not None else float("-inf")
@@ -69,6 +73,21 @@ def objective_value(row: Dict[str, Any], objective: str, balanced_on: str, w_dp:
     dp, eo = fetch_metric(row, "dp"), fetch_metric(row, "eo")
     if m is None or dp is None or eo is None:
         return float("-inf")
+
+    if objective == "balanced":
+        return float(m) - w_dp * float(dp) - w_eo * float(eo)
+    if objective == "attack_dp_eo":
+        return w_dp * float(dp) + w_eo * float(eo)
+    if objective == "attack_balanced":
+        u = fetch_metric(row, util_on)
+        if u is None: return float("-inf")
+        score = w_dp * float(dp) + w_eo * float(eo)
+        if util_min is not None:
+            score -= lambda_util * max(0.0, float(util_min) - float(u))
+            if float(u) < float(util_min):  # optional hard fail:
+                # still return penalized score so trials remain comparable
+                return score
+        return score
     return float(m) - w_dp * float(dp) - w_eo * float(eo)
 
 def read_jsonl(path: Path) -> List[Dict[str, Any]]:
@@ -150,9 +169,81 @@ def summarize_trial_dir(trial_dir: Path, objective: str, balanced_on: str, w_dp:
 SMALL = {"german", "bail", "nba"}
 LARGE = {"pokec_z", "pokec_n"}
 
-def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset: str) -> Dict[str, Any]:
+def _suggest_nifa_hparams(trial: optuna.trial.Trial, dataset: str) -> Dict[str, Any]:
+    """
+    NIFA-only hyperparameter search space (dataset-aware).
+    Grounded in the original NIFA settings/ablations:
+      - b (injected nodes) ~1% of labeled on large graphs; a bit wider on small graphs
+      - d (edges per injected node) ≈ dataset's avg degree (Pokec ~50)
+      - k% in {0.1, 0.25, 0.5, 0.75} with 0.5 often best
+      - α in {0.005..0.2}, β in {2,4,8,16}
+      - T ~20 (search a small band), loops ~20 on Pokec; ~10–15 on smaller graphs
+    """
+    hp: Dict[str, Any] = {}
+
+    # --- Shared knobs (paper-faithful) ---
+    # Uncertainty percentile (top-k%) prefers 0.5; search over paper's discrete set
+    hp["nifa_theta"]  = trial.suggest_categorical("nifa_theta", [0.1, 0.25, 0.5, 0.75])
+    # Loss weights
+    hp["nifa_alpha"]  = trial.suggest_categorical("nifa_alpha", [0.005, 0.01, 0.02, 0.05, 0.1, 0.2])
+    hp["nifa_beta"]   = trial.suggest_categorical("nifa_beta",  [2, 4, 8, 16])
+    # MC-dropout samples T (paper uses 20; allow a narrow search)
+    hp["nifa_T"]      = trial.suggest_int("nifa_T", 16, 28, step=2)
+    # Outer loops (a.k.a. max_iter vibe)
+    # Pokec*: ~20; small graphs can use 8–15
+    loops_large = trial.suggest_int("nifa_loops_large", 15, 25)  # used for Pokec
+    loops_small = trial.suggest_int("nifa_loops_small", 8, 15)
+    # LR for surrogate/feature optim in attack (paper ~1e-3; log search around it)
+    hp["nifa_lr"]     = trial.suggest_float("nifa_lr", 1e-4, 5e-3, log=True)
+    # How many of the high-uncertainty nodes to target when wiring edges
+    hp["nifa_ratio"]  = trial.suggest_float("nifa_ratio", 0.25, 0.75)
+    # Target-node selector: paper’s main (uncertainty) plus the degree variant (Appendix)
+    hp["nifa_mode"]   = trial.suggest_categorical("nifa_mode", ["uncertainty", "degree"])
+
+    # --- Dataset-aware b (=nifa_node) and d (=nifa_edge), plus loops ---
+    if dataset == "pokec_z":
+        # b around 1% of labeled nodes; Table A1 reports b≈102; search a tight band
+        hp["nifa_node"] = trial.suggest_int("nifa_node", 60, 200, step=10)
+        # d near avg degree ~50; search a narrow window
+        hp["nifa_edge"] = trial.suggest_int("nifa_edge", 40, 65, step=1)
+        hp["nifa_loops"] = loops_large
+    elif dataset == "pokec_n":
+        # Table A1 b≈87; similar band
+        hp["nifa_node"] = trial.suggest_int("nifa_node", 50, 180, step=10)
+        hp["nifa_edge"] = trial.suggest_int("nifa_edge", 40, 65, step=1)
+        hp["nifa_loops"] = loops_large
+    elif dataset == "nba":
+        # Small graph: keep b small (≈1–5% of labeled → single digits/teens)
+        hp["nifa_node"] = trial.suggest_int("nifa_node", 4, 20, step=2)
+        # avg degree typically much lower than Pokec
+        hp["nifa_edge"] = trial.suggest_int("nifa_edge", 8, 20, step=1)
+        hp["nifa_loops"] = loops_small
+    elif dataset == "bail":
+        hp["nifa_node"] = trial.suggest_int("nifa_node", 10, 100, step=5)
+        hp["nifa_edge"] = trial.suggest_int("nifa_edge", 6, 24, step=1)
+        hp["nifa_loops"] = loops_small
+    elif dataset == "german":
+        hp["nifa_node"] = trial.suggest_int("nifa_node", 10, 80, step=5)
+        hp["nifa_edge"] = trial.suggest_int("nifa_edge", 6, 20, step=1)
+        hp["nifa_loops"] = loops_small
+    else:
+        # sensible fallbacks
+        hp["nifa_node"] = trial.suggest_int("nifa_node", 20, 100, step=5)
+        hp["nifa_edge"] = trial.suggest_int("nifa_edge", 8, 24, step=1)
+        hp["nifa_loops"] = loops_small
+
+    return hp
+
+def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset: str,
+                    tune_scope: str = "gnn", attack: str = "none") -> Dict[str, Any]:
     """Return a dict of suggested hyperparams for this (model, encoder, dataset)."""
     hp: Dict[str, Any] = {}
+
+    # If only tuning attack, return NIFA hparams directly
+    if tune_scope in {"attack","both"} and attack == "nifa":
+        hp.update(_suggest_nifa_hparams(trial, dataset))
+        if tune_scope == "attack":
+            return hp
 
     # Common spaces: learning rate, weight decay, dropout, hidden size, layers
     if dataset in SMALL:
@@ -217,7 +308,7 @@ def build_trial_dir(root: Path, model: str, encoder: str, dataset: str, objectiv
     return base / f"trial_{trial_number:04d}_{h}"
 
 def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, seeds: List[int], study_stamp:str) -> Tuple[float, float, Path]:
-    hp = suggest_hparams(trial, args.model, args.encoder, args.dataset)
+    hp = suggest_hparams(trial, args.model, args.encoder, args.dataset, args.tune_scope, args.attack)
     trial.set_user_attr("hparams", hp)
     trial_dir = build_trial_dir(Path(args.log_root), args.model, args.encoder, args.dataset, args.objective, args.tag, study_stamp, trial.number, hp)
     ensure_dir(trial_dir)
@@ -236,14 +327,19 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
         a.cuda = torch.cuda.is_available()
         a.log_dir = str(trial_dir)
         a.seed_dir = str(trial_dir / f"seed_{seed}")
+        # Ensure we are actually running the attack for this study
+        if args.attack == "nifa":
+            a.attack = "nifa"
         os.makedirs(a.seed_dir, exist_ok=True)
 
         set_seed(seed, use_cuda=a.cuda)
         if a.model == "fairinv":
             pbar = tqdm(total=args.epochs, desc=f"Seed {seed}", unit="epoch", bar_format="{l_bar}{bar:30}{r_bar}")
             run_fairinv(a, data, pbar)
-        else: # vanilla or edge_adder
-            run_vanilla_or_edge(a, data, a.seed_dir)
+        elif a.model in ["edge_adder","edge_minmax"]:
+            run_edge_adder_unified(a, data, a.seed_dir)
+        else:  # vanilla
+            run_vanilla(a, data, a.seed_dir)
 
     # Summarize
     summ = summarize_trial_dir(trial_dir, args.objective, args.balanced_on, args.w_dp, args.w_eo)
@@ -305,10 +401,20 @@ def make_parser():
 
     # Objective
     p.add_argument("--objective", type=str, default="auc_f1",
-                   choices=["f1", "auc", "auc_f1", "balanced", "f1_mean_minus_std", "auc_f1_mean_minus_std"])
+                   choices=["f1", "auc", "auc_f1", "balanced",
+                            "f1_mean_minus_std", "auc_f1_mean_minus_std",
+                            "attack_dp_eo", "attack_balanced"])
     p.add_argument("--balanced_on", choices=["auc", "f1"], default="f1")
     p.add_argument("--w_dp", type=float, default=1.0)
     p.add_argument("--w_eo", type=float, default=1.0)
+    p.add_argument("--util_on", choices=["auc","f1"], default="f1")
+    p.add_argument("--util_min", type=float, default=None, help="Hard utility floor for attack objectives.")
+    p.add_argument("--lambda_util", type=float, default=1.0, help="Hinge penalty for attack_balanced.")
+
+    # Attack control (we’ll keep GNN HPs fixed and only tune attack HPs)
+    p.add_argument("--attack", choices=["none", "nifa"], default="none")
+    p.add_argument("--tune_scope", choices=["gnn", "attack", "both"], default="attack",
+                   help="What to tune: victim GNN, attack, or both. For NIFA studies use 'attack'.")
 
     # Optuna controls
     p.add_argument("--n_trials", type=int, default=40)
@@ -323,9 +429,10 @@ def make_parser():
 def main():
     parser = make_parser()
     args = parser.parse_args()
+    args = load_best_overall_into_args(args)
 
     # env & device & data
-    configure_threads(getattr(args, "num_threads", 1))
+    configure_threads(getattr(args, "num_threads", 2))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ds = FairDataset(args.dataset, device)
     ds.load_data()
