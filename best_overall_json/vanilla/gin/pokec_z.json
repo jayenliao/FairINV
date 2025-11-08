@@ -1,0 +1,22 @@
+{
+  "number": 24,
+  "value": 0.7533509562152497,
+  "params": {
+    "lr": 0.03251178391811228,
+    "weight_decay": 1.0849550516894802e-05,
+    "hid_dim": 64,
+    "dropout": 0.1540882966164971
+  },
+  "user_attrs": {
+    "hparams": {
+      "lr": 0.03251178391811228,
+      "weight_decay": 1.0849550516894802e-05,
+      "hid_dim": 64,
+      "dropout": 0.1540882966164971,
+      "layer_num": 2
+    },
+    "val_mean": 0.7533509562152497,
+    "test_mean": 0.6770373120586675,
+    "trial_dir": "logs/optuna/pokec_z/gin/vanilla/auc_f1/20251007-182259_auto75/trial_0024_1675f382"
+  }
+}

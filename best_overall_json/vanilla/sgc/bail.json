@@ -1,0 +1,22 @@
+{
+  "number": 43,
+  "value": 0.8609012940350189,
+  "params": {
+    "lr": 0.049607028877013896,
+    "weight_decay": 6.916492414107343e-06,
+    "hid_dim": 16,
+    "dropout": 0.29297193375772823
+  },
+  "user_attrs": {
+    "hparams": {
+      "lr": 0.049607028877013896,
+      "weight_decay": 6.916492414107343e-06,
+      "hid_dim": 16,
+      "dropout": 0.29297193375772823,
+      "layer_num": 1
+    },
+    "val_mean": 0.8609012940350189,
+    "test_mean": 0.8440208236071903,
+    "trial_dir": "logs/optuna/bail/sgc/vanilla/auc_f1/20251007-215331_auto75/trial_0043_5f1aba48"
+  }
+}

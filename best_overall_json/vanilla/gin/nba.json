@@ -1,0 +1,22 @@
+{
+  "number": 21,
+  "value": 0.7633718274261245,
+  "params": {
+    "lr": 0.026542835474414488,
+    "weight_decay": 0.00020429664733485857,
+    "hid_dim": 128,
+    "dropout": 0.40896923459467177
+  },
+  "user_attrs": {
+    "hparams": {
+      "lr": 0.026542835474414488,
+      "weight_decay": 0.00020429664733485857,
+      "hid_dim": 128,
+      "dropout": 0.40896923459467177,
+      "layer_num": 2
+    },
+    "val_mean": 0.7633718274261245,
+    "test_mean": 0.4836008030644826,
+    "trial_dir": "logs/optuna/nba/gin/vanilla/auc_f1/20251007-111940_auto75/trial_0021_742a5389"
+  }
+}
