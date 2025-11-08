@@ -4,6 +4,7 @@ import torch
 
 def get_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--debug', action='store_true', help='Whether to run in debug mode.')
     parser.add_argument('--model', choices=['fairinv', 'vanilla', 'edge_adder', 'edge_minmax'], default='vanilla')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='Disables CUDA training.')

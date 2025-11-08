@@ -80,7 +80,7 @@ class FairINV(nn.Module):
             if m.bias is not None:
                 m.bias.data.fill_(0.0)
 
-    def train_model(self, data, **kwargs):
+    def train_model(self, data, checkpoint_path, **kwargs):
         """
         Train FairINV model
         :param data: input graph data
@@ -157,7 +157,7 @@ class FairINV(nn.Module):
                 pred_all = (output_all.squeeze() > 0).type_as(data.labels)
 
             auc_tr, f1_tr, acc_tr, dp_tr, eo_tr = get_metrics(
-                Y=data.labels, logit=output_all, pred=pred_all, idx=data.idx_train, data=data, neg=args.use_neg_metrics
+                Y=data.labels, logit=output_all, pred=pred_all, idx=data.idx_train, data=data, neg=False
             )
 
             elog.log(epoch, "train", {
@@ -175,7 +175,7 @@ class FairINV(nn.Module):
 
             # utility performance
             auc_val, f1_val, acc_val, dp_val, eo_val = get_metrics(
-                Y=data.labels, logit=output_all, pred=pred_all, idx=data.idx_val, data=data, neg=args.use_neg_metrics
+                Y=data.labels, logit=output_all, pred=pred_all, idx=data.idx_val, data=data, neg=False
             )
             elog.log(epoch, "val", {
                 'loss_all': loss_train.item(),
@@ -189,14 +189,21 @@ class FairINV(nn.Module):
                 'eo': eo_val
             })
 
-            if self.args.dataset in ['pokec_z', 'pokec_n']:
-                if loss_cls_val.item() < best_loss:
-                    best_loss = loss_cls_val.item()
-                    torch.save(self.state_dict(), f'./weights/FairINV_{self.args.encoder}.pt')
-            else:
-                if auc_val - dp_val - eo_val > best_result:
-                    best_result = auc_val - dp_val - eo_val
-                    torch.save(self.state_dict(), f'./weights/FairINV_{self.args.encoder}.pt')
+            # if self.args.dataset in ['pokec_z', 'pokec_n']:
+            #     if loss_cls_val.item() < best_loss:
+            #         best_loss = loss_cls_val.item()
+            #         torch.save(self.state_dict(), f'./weights/FairINV_{self.args.encoder}.pt')
+            # else:
+            #     score = (auc_val + f1_val) / 2 # - dp_val - eo_val
+            #     if score > best_result:
+            #         best_result = score
+            #         torch.save(self.state_dict(), f'./weights/FairINV_{self.args.encoder}.pt')
+
+            score = (auc_val + f1_val) / 2
+            if score > best_result:
+                best_result = score
+                torch.save(self.state_dict(), checkpoint_path)
+
 
             if 'writer' in locals():
                 # log training set loss

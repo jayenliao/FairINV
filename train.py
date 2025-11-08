@@ -105,12 +105,13 @@ def run_fairinv(args, data, pbar):
     """
     Train model
     """
-    elog = fairinv.train_model(data, pbar=pbar)
+    checkpoint_path = f'./weights/fi/{args.dataset}_{args.encoder}.pt' if not args.debug else f'./weights/fi_old/FairINV_{args.encoder}_debug.pt'
+    elog = fairinv.train_model(data, checkpoint_path, pbar=pbar)
 
     """
     evaluation
     """
-    fairinv.load_state_dict(torch.load(f'./weights/FairINV_{args.encoder}.pt'))
+    fairinv.load_state_dict(torch.load(checkpoint_path))
     fairinv.eval()
     with torch.no_grad():
         output = fairinv(data.features, data.edge_index)
