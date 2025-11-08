@@ -381,6 +381,8 @@ def make_parser():
     p.add_argument("--model", choices=["vanilla", "fairinv", "edge_adder"], default=base.model)
     p.add_argument("--encoder", choices=["gcn", "gat", "gin", "sage", "sgc"], default=base.encoder)
     p.add_argument("--dataset", choices=["nba", "bail", "pokec_z", "pokec_n", "german"], default=base.dataset)
+    p.add_argument("--best_overall_path", type=str, default=getattr(base, "best_overall_path", ""),
+                   help="Path to a JSON containing prior best victim-GNN hyperparams (will be loaded before tuning).")
 
     p.add_argument("--epochs", type=int, default=base.epochs)
     p.add_argument("--log_root", type=str, default="logs/optuna")

@@ -122,7 +122,7 @@ def run_fairinv(args, data, pbar):
         pred=pred,
         idx=data.idx_test,
         data=data,
-        neg=args.use_neg_metrics
+        neg=False
     )
     metrics_test = {
         'auc': auc_test,
@@ -194,7 +194,7 @@ def _eval_on_graph(backbone, clf, X, A, Y, idx, data):
     H = backbone(X, A)
     logits = clf(H).squeeze(1)
     pred = (logits > 0).long()
-    return get_metrics(Y, logits, pred=pred, idx=idx, data=data, neg=args.use_neg_metrics)
+    return get_metrics(Y, logits, pred=pred, idx=idx, data=data, neg=False)
 
 
 def run_edge_adder_unified(args, data, seed_dir):
@@ -426,7 +426,7 @@ def run_vanilla(args, data, seed_dir):
         with torch.no_grad():
             pred_tr = (logits > 0).long()
             auc_tr, f1_tr, acc_tr, dp_tr, eo_tr = get_metrics(
-                Y, logits, pred=pred_tr, idx=idx_tr, data=data, neg=args.use_neg_metrics
+                Y, logits, pred=pred_tr, idx=idx_tr, data=data, neg=False
             )
             metrics_train = {
                 # losses (train)
@@ -459,7 +459,7 @@ def run_vanilla(args, data, seed_dir):
 
         pred_val = (logit_val > 0).long()
         auc, f1, acc, dp, eo = get_metrics(
-            Y, logit_val, pred=pred_val, idx=idx_va, data=data, neg=args.use_neg_metrics
+            Y, logit_val, pred=pred_val, idx=idx_va, data=data, neg=False
         )
 
         score = (auc + f1) / 2 #- dp - eo
@@ -501,7 +501,7 @@ def run_vanilla(args, data, seed_dir):
     pred_t = (logit_t > 0).long()
 
     auc_test, f1_test, acc_test, dp_test, eo_test = get_metrics(
-        Y, logit_t, pred=pred_t, idx=idx_te, data=data, neg=args.use_neg_metrics
+        Y, logit_t, pred=pred_t, idx=idx_te, data=data, neg=False
     )
     metrics_test = {
         'auc': auc_test,
@@ -528,10 +528,10 @@ def load_best_overall_into_args(args):
     for k in params:
         setattr(args, k, params[k])
 
-    if args.lambda_eo == -1.0:
+    if getattr(args, "lambda_eo", 0.0) == -1.0:
         print("Setting lambda_eo to lambda_dp")
         setattr(args, "lambda_eo", args.lambda_dp)
-    if args.layer_num == 3:
+    if getattr(args, "layer_num", 0) == 3:
         print("Setting layer_num to 2")
         setattr(args, "layer_num", 2)
 

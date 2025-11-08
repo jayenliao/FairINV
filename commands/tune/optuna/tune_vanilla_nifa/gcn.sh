@@ -2,6 +2,7 @@
 # gcn.sh — Optuna tuning for NIFA attacks on vanilla GCN (with --dry support)
 
 set -Eeuo pipefail
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-6}"
 
 # ---------- CLI flags ----------
 DRY=${DRY:-0}
@@ -38,8 +39,6 @@ run_cmd() {
   fi
 }
 
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
-
 # ---------- Defaults (override via env) ----------
 DATASETS=(${DATASETS:-bail pokec_n pokec_z nba german})
 MODELS=(${MODELS:-vanilla})
@@ -66,11 +65,11 @@ STORAGE=${STORAGE:-}
 TAG=${TAG:-nifa}
 
 declare -A best_paths=(
-  [bail]="logs_piplup/optuna/bail/gcn/vanilla/auc_f1/20251006-003953_auto75/best_overall.json"
-  [pokec_z]="logs_piplup/optuna/pokec_z/gcn/vanilla/auc_f1/20251006-004128_auto75/best_overall.json"
-  [pokec_n]="logs_piplup/optuna/pokec_n/gcn/vanilla/auc_f1/20251006-004151_auto75/best_overall.json"
-  [nba]="logs_piplup/optuna/nba/gcn/vanilla/auc_f1/20251006-004228_auto75/best_overall.json"
-  [german]="logs_piplup/optuna/german/gcn/vanilla/auc_f1/20251006-003808_auto75/best_overall.json"
+  [bail]="best_overall_json/vanilla/gcn/bail.json"
+  [pokec_z]="best_overall_json/vanilla/gcn/pokec_z.json"
+  [pokec_n]="best_overall_json/vanilla/gcn/pokec_n.json"
+  [nba]="best_overall_json/vanilla/gcn/nba.json"
+  [german]="best_overall_json/vanilla/gcn/german.json"
 )
 
 echo "== NIFA tuning with Optuna =="
@@ -101,6 +100,7 @@ for ds in "${DATASETS[@]}"; do
 done
 
 for ds in "${DATASETS[@]}"; do
+  best_path="${best_paths[$ds]}"
   for enc in "${ENCODERS[@]}"; do
     for m in "${MODELS[@]}"; do
       echo "---- ${m} / ${enc} / ${ds} ----"
