@@ -453,8 +453,11 @@ def main():
     study_stamp = now_ts()
     out_root = build_timestamp_dir(Path(args.log_root), args.model, args.encoder, args.dataset, args.objective, args.tag, study_stamp)
     ensure_dir(out_root)
-    study = optuna.create_study(direction="maximize", study_name=study_name, sampler=sampler, pruner=pruner,
-                                storage=args.storage, load_if_exists=True)
+    study = optuna.create_study(
+        direction="maximize",
+        study_name=study_name, sampler=sampler, pruner=pruner,
+        storage=args.storage, load_if_exists=True
+    )
 
     def _objective(trial: optuna.trial.Trial):
         val_mean, test_mean, tdir = run_one_trial(args, device, ds, trial, seeds, study_stamp)
