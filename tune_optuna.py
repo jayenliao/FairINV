@@ -158,11 +158,11 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
     if dataset in SMALL:
         hp["lr"] = trial.suggest_float("lr", 5e-4, 5e-2, log=True)
         hp["weight_decay"] = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
-        hp["hid_dim"] = trial.suggest_categorical("hid_dim", [16, 32, 64, 128])
+        hp["hid_dim"] = trial.suggest_categorical("hid_dim", [16, 32, 64])
     else:  # LARGE
         hp["lr"] = trial.suggest_float("lr", 1e-4, 5e-2, log=True)
         hp["weight_decay"] = trial.suggest_float("weight_decay", 1e-6, 3e-3, log=True)
-        hp["hid_dim"] = trial.suggest_categorical("hid_dim", [32, 64, 128, 256])
+        hp["hid_dim"] = trial.suggest_categorical("hid_dim", [32, 64, 128])
 
     hp["dropout"] = trial.suggest_float("dropout", 0.0, 0.7)
     # layer_num: used by GCN/GAT; SGC ignores beyond 1; GIN/SAGE custom modules ignore layer_num internally.
@@ -170,21 +170,23 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
         if encoder in ["gcn", "gin", "sgc"]:
             hp["layer_num"] = 1
         elif encoder in ["sage"]:
-            hp["layer_num"] = 2
+            hp["layer_num"] = 1
         else: # gat
-            hp["layer_num"] = trial.suggest_int("layer_num", 1, 2)
+            hp["layer_num"] = 1
     else:
         if encoder in {"gcn", "gat"}:
-            hp["layer_num"] = trial.suggest_int("layer_num", 1, 3)
+            hp["layer_num"] = 1
         elif encoder == "sgc":
             hp["layer_num"] = 1  # ConstructModel stacks a single SGConv
         else: # sage, gin
-            hp["layer_num"] = 2
+            hp["layer_num"] = 1
 
     # Model-specific
     if model == "fairinv":
-        hp["alpha"] = trial.suggest_float("alpha", 1e-1, 1e+1, log=True)       # balance Var + alpha*Mean
-        hp["lr_sp"] = trial.suggest_float("lr_sp", 1e-2, 5e-1, log=True)       # SAP learning rate
+        hp["alpha"] = trial.suggest_categorical("alpha", [0.001, 0.01, 0.1, 0.5, 1, 10, 100])
+        hp["lr_sp"] = trial.suggest_categorical("lr_sp", [0.01, 0.05, 0.1, 0.5])
+        # hp["alpha"] = trial.suggest_float("alpha", 1e-1, 1e+1, log=True)       # balance Var + alpha*Mean
+        # hp["lr_sp"] = trial.suggest_float("lr_sp", 1e-2, 5e-1, log=True)       # SAP learning rate
         hp["env_num"] = trial.suggest_int("env_num", 2, 3)                      # #environments (groups)
         # partition_times impacts runtime heavily; keep default (3).
 
