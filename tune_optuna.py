@@ -239,6 +239,8 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
     """Return a dict of suggested hyperparams for this (model, encoder, dataset)."""
     hp: Dict[str, Any] = {}
 
+    hp["layer_num"] = 1  # fixed to 1 for all models/encoders in this tuning setup
+
     # If only tuning attack, return NIFA hparams directly
     if tune_scope in {"attack","both"} and attack == "nifa":
         hp.update(_suggest_nifa_hparams(trial, dataset))
@@ -257,20 +259,20 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
 
     hp["dropout"] = trial.suggest_float("dropout", 0.0, 0.7)
     # layer_num: used by GCN/GAT; SGC ignores beyond 1; GIN/SAGE custom modules ignore layer_num internally.
-    if model == "fairinv":
-        if encoder in ["gcn", "gin", "sgc"]:
-            hp["layer_num"] = 1
-        elif encoder in ["sage"]:
-            hp["layer_num"] = 1
-        else: # gat
-            hp["layer_num"] = 1
-    else:
-        if encoder in {"gcn", "gat"}:
-            hp["layer_num"] = 1
-        elif encoder == "sgc":
-            hp["layer_num"] = 1  # ConstructModel stacks a single SGConv
-        else: # sage, gin
-            hp["layer_num"] = 1
+    # if model == "fairinv":
+    #     if encoder in ["gcn", "gin", "sgc"]:
+    #         hp["layer_num"] = 1
+    #     elif encoder in ["sage"]:
+    #         hp["layer_num"] = 1
+    #     else: # gat
+    #         hp["layer_num"] = 1
+    # else:
+    #     if encoder in {"gcn", "gat"}:
+    #         hp["layer_num"] = 1
+    #     elif encoder == "sgc":
+    #         hp["layer_num"] = 1  # ConstructModel stacks a single SGConv
+    #     else: # sage, gin
+    #         hp["layer_num"] = 1
 
     # Model-specific
     if model == "fairinv":
