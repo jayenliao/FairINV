@@ -1,12 +1,13 @@
 import argparse
 import torch
 
-def get_args():
+def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--debug', action='store_true', help='Whether to run in debug mode.')
     parser.add_argument('--model', choices=['fairinv', 'vanilla', 'edge_adder', 'edge_minmax'], default='vanilla')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='Disables CUDA training.')
+    parser.add_argument('--device', type=str, default='cuda', help='Device to use for computation.')
     parser.add_argument('--start_seed', type=int, default=42, help='Random seed start.')
     parser.add_argument('--seed_num', type=int, default=10, help='The number of random seed.')
     parser.add_argument('--num_threads', type=int, default=1,
@@ -75,10 +76,4 @@ def get_args():
     parser.add_argument('--nifa_lr', type=float, default=0.001)
     parser.add_argument('--nifa_loops', type=int, default=50)
 
-    args = parser.parse_known_args()[0]
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
-
-    # set device
-    args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    return args
+    return parser

@@ -24,13 +24,13 @@ from tqdm import tqdm
 import torch
 import optuna
 
-from args import get_args as get_base_args
+from args import get_parser
 from data import FairDataset
 from utils import set_seed
 from utils import configure_threads
 # training entrypoints and snapshot helpers
 from train import run_vanilla, run_fairinv, run_edge_adder_unified
-from train import snapshot_clean_data, restore_from_snapshot
+from train import load_best_overall_into_args, snapshot_clean_data, restore_from_snapshot
 # NIFA bridge
 from nifa_bridge import apply_nifa_attack
 
@@ -402,30 +402,31 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
 # -----------------------------
 
 def make_parser():
-    base = get_base_args()  # grab defaults to mirror train.py
-    p = argparse.ArgumentParser(description="Optuna tuner for Fair GNNs")
-    p.add_argument("--model", choices=["vanilla", "fairinv", "edge_adder"], default=base.model)
-    p.add_argument("--encoder", choices=["gcn", "gat", "gin", "sage", "sgc"], default=base.encoder)
-    p.add_argument("--dataset", choices=["nba", "bail", "pokec_z", "pokec_n", "german"], default=base.dataset)
-    p.add_argument("--best_overall_path", type=str, default=getattr(base, "best_overall_path", ""),
-                   help="Path to a JSON containing prior best victim-GNN hyperparams (will be loaded before tuning).")
+    # base = get_base_args()  # grab defaults to mirror train.py
+    p = get_parser()
+    # p = argparse.ArgumentParser(description="Optuna tuner for Fair GNNs")
+    # p.add_argument("--model", choices=["vanilla", "fairinv", "edge_adder"], default=base.model)
+    # p.add_argument("--encoder", choices=["gcn", "gat", "gin", "sage", "sgc"], default=base.encoder)
+    # p.add_argument("--dataset", choices=["nba", "bail", "pokec_z", "pokec_n", "german"], default=base.dataset)
+    # p.add_argument("--best_overall_path", type=str, default=getattr(base, "best_overall_path", ""),
+    #                help="Path to a JSON containing prior best victim-GNN hyperparams (will be loaded before tuning).")
 
-    p.add_argument("--epochs", type=int, default=base.epochs)
+    # p.add_argument("--epochs", type=int, default=base.epochs)
+    # p.add_argument("--log_interval", type=int, default=base.log_interval)
     p.add_argument("--log_root", type=str, default="logs/optuna")
-    p.add_argument("--log_interval", type=int, default=base.log_interval)
 
     # FairINV - SAP
-    p.add_argument("--partition_times", type=int, default=base.partition_times,
-                   help='the number for partitioning the sensitive attribute group.')
+    # p.add_argument("--partition_times", type=int, default=base.partition_times,
+    #                help='the number for partitioning the sensitive attribute group.')
 
     # Threads
-    p.add_argument("--num_threads", type=int, default=base.num_threads,
-                   help="Number of CPU threads to use for BLAS/DGL/PyTorch ops.")
+    # p.add_argument("--num_threads", type=int, default=base.num_threads,
+    #                help="Number of CPU threads to use for BLAS/DGL/PyTorch ops.")
 
     # Seeds
-    p.add_argument("--seeds", type=int, nargs="+", default=[base.start_seed + i for i in range(max(1, base.seed_num or 1))])
-    p.add_argument("--start_seed", type=int, default=base.start_seed)
-    p.add_argument("--seed_num", type=int, default=base.seed_num or 1)
+    # p.add_argument("--seeds", type=int, nargs="+", default=[base.start_seed + i for i in range(max(1, base.seed_num or 1))])
+    # p.add_argument("--start_seed", type=int, default=base.start_seed)
+    # p.add_argument("--seed_num", type=int, default=base.seed_num or 1)
 
     # Objective
     p.add_argument("--objective", type=str, default="auc_f1",
@@ -440,7 +441,7 @@ def make_parser():
     p.add_argument("--lambda_util", type=float, default=1.0, help="Hinge penalty for attack_balanced.")
 
     # Attack control (we’ll keep GNN HPs fixed and only tune attack HPs)
-    p.add_argument("--attack", choices=["none", "nifa"], default="none")
+    # p.add_argument("--attack", choices=["none", "nifa"], default="none")
     p.add_argument("--tune_scope", choices=["gnn", "attack", "both"], default="attack",
                    help="What to tune: victim GNN, attack, or both. For NIFA studies use 'attack'.")
 
@@ -466,7 +467,7 @@ def main():
     ds.load_data()
 
     # Build seeds list
-    seeds = args.seeds if (args.seeds and len(args.seeds) > 0) else [args.start_seed + i for i in range(max(1, args.seed_num))]
+    seeds = range(args.start_seed, args.start_seed + args.seed_num) # if (not args.seeds or len(args.seeds) == 0) else args.seeds
 
     # Sampler & pruner
     sampler = optuna.samplers.TPESampler(n_startup_trials=10, multivariate=True) if args.sampler == "tpe" else optuna.samplers.RandomSampler()

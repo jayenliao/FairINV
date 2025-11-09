@@ -44,7 +44,8 @@ DATASETS=(${DATASETS:-bail pokec_n pokec_z nba german})
 MODELS=(${MODELS:-vanilla})
 ENCODERS=(${ENCODERS:-gcn})
 
-SEEDS="${SEEDS:-0 1 2 3 4 5 6 7 8 9}"
+START_SEED=${START_SEED:-0}
+SEED_NUM=${SEED_NUM:-10}
 N_TRIALS=${N_TRIALS:-64}
 EPOCHS=${EPOCHS:-500}
 N_THREADS=${N_THREADS:-4}
@@ -76,7 +77,7 @@ echo "== NIFA tuning with Optuna =="
 echo "GPU(s):            ${CUDA_VISIBLE_DEVICES}"
 echo "Datasets:          ${DATASETS[*]}"
 echo "Model/Encoder:     ${MODELS[*]} / ${ENCODERS[*]}"
-echo "Seeds:             ${SEEDS}"
+# echo "Seeds:             ${SEEDS}"
 echo "Trials per job:    ${N_TRIALS}"
 echo "Epochs per trial:  ${EPOCHS}"
 echo "Threads:           ${N_THREADS}"
@@ -108,7 +109,7 @@ for ds in "${DATASETS[@]}"; do
         --model "${m}" --encoder "${enc}" --dataset "${ds}"
         --best_overall_path "${best_path}"
         --attack nifa --tune_scope attack
-        --seeds ${SEEDS}
+        --start_seed ${START_SEED} --seed_num ${SEED_NUM}
         --num_threads ${N_THREADS}
         --epochs ${EPOCHS}
         --objective "${OBJ}" --balanced_on "${BAL_ON}" --w_dp "${W_DP}" --w_eo "${W_EO}"

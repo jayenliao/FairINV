@@ -1,5 +1,4 @@
 import ipdb, time, random, os, json, copy
-import argparse
 import numpy as np
 import torch
 import torch.nn as nn
@@ -9,7 +8,7 @@ from torch_geometric.loader import DataLoader
 from torch_sparse import SparseTensor
 from tqdm import tqdm
 from datetime import datetime
-from args import get_args
+from args import get_parser
 from data import FairDataset
 from utils import Results, configure_threads, set_seed, get_metrics
 from policies import build_policies
@@ -592,6 +591,7 @@ def main(args):
 if __name__ == '__main__':
     if torch.cuda.is_available():
         torch.multiprocessing.set_start_method('spawn')
-    args = get_args()
+    parser = get_parser()
+    args = parser.parse_known_args()[0]
     args = load_best_overall_into_args(args)
     main(args)
