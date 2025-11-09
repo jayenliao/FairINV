@@ -62,6 +62,13 @@ def objective_value(
     w_dp: float, w_eo: float,
     util_on: str = "f1", util_min: float | None = None, lambda_util: float = 1.0
 ) -> float:
+
+    # Strong checks for attack objectives — do not silently degrade to "balanced"
+    def _need(keys: list[str]):
+        for k in keys:
+            if k not in row or row[k] is None:
+                raise KeyError(f"objective_value: missing metric '{k}' in row for objective='{objective}'")
+
     if objective == "f1":
         v = fetch_metric(row, "f1")
         return float(v) if v is not None else float("-inf")
@@ -72,7 +79,8 @@ def objective_value(
         v_auc = fetch_metric(row, "auc")
         v_f1 = fetch_metric(row, "f1")
         return float(v_auc + v_f1) * 0.5 if v_auc is not None and v_f1 is not None else float("-inf")
-    # balanced
+
+    # balanced (utility minus fairness penalties)
     m = fetch_metric(row, "auc") if balanced_on == "auc" else fetch_metric(row, "f1")
     dp, eo = fetch_metric(row, "dp"), fetch_metric(row, "eo")
     if m is None or dp is None or eo is None:
@@ -81,16 +89,16 @@ def objective_value(
     if objective == "balanced":
         return float(m) - w_dp * float(dp) - w_eo * float(eo)
     if objective == "attack_dp_eo":
+        _need(["dp", "eo"])
         return w_dp * float(dp) + w_eo * float(eo)
     if objective == "attack_balanced":
+        _need(["dp", "eo"])
         u = fetch_metric(row, util_on)
-        if u is None: return float("-inf")
+        if u is None:
+            raise KeyError(f"objective_value: missing '{util_on}' for attack_balanced")
         score = w_dp * float(dp) + w_eo * float(eo)
         if util_min is not None:
             score -= lambda_util * max(0.0, float(util_min) - float(u))
-            if float(u) < float(util_min):  # optional hard fail:
-                # still return penalized score so trials remain comparable
-                return score
         return score
     return float(m) - w_dp * float(dp) - w_eo * float(eo)
 
@@ -106,7 +114,10 @@ def read_jsonl(path: Path) -> List[Dict[str, Any]]:
                 pass
     return rows
 
-def summarize_trial_dir(trial_dir: Path, objective: str, balanced_on: str, w_dp: float, w_eo: float):
+def summarize_trial_dir(
+    trial_dir: Path, objective: str, balanced_on: str, w_dp: float, w_eo: float,
+    util_on: str = "f1", util_min: float | None = None, lambda_util: float = 1.0
+) -> Dict[str, Any]:
     per_seed = []
     for sd in sorted([p for p in trial_dir.iterdir() if p.is_dir() and p.name.startswith("seed_")]):
         rows = read_jsonl(sd / "metrics.jsonl")
@@ -116,7 +127,7 @@ def summarize_trial_dir(trial_dir: Path, objective: str, balanced_on: str, w_dp:
         best = None
         best_val = float("-inf")
         for r in val_rows:
-            v = objective_value(r, objective, balanced_on, w_dp, w_eo)
+            v = objective_value(r, objective, balanced_on, w_dp, w_eo, util_on, util_min, lambda_util)
             if v > best_val:
                 best_val = v
                 best = r
@@ -126,7 +137,7 @@ def summarize_trial_dir(trial_dir: Path, objective: str, balanced_on: str, w_dp:
             "best_val_score": best_val,
             "best_val_row": best,
             "test_row": test_row,
-            "test_score": objective_value(test_row, objective, balanced_on, w_dp, w_eo),
+            "test_score": objective_value(test_row, objective, balanced_on, w_dp, w_eo, util_on, util_min, lambda_util),
         })
     if not per_seed:
         return {
@@ -368,7 +379,38 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
 
 
     # Summarize
-    summ = summarize_trial_dir(trial_dir, args.objective, args.balanced_on, args.w_dp, args.w_eo)
+    summ = summarize_trial_dir(
+        trial_dir, args.objective, args.balanced_on, args.w_dp, args.w_eo,
+        getattr(args, "util_on", "f1"),
+        getattr(args, "util_min", 0.55),
+        getattr(args, "lambda_util", 1.0),
+    )
+
+    # A small debug snapshot to inspect chosen epoch/metrics per seed
+    try:
+        dbg = {
+            "objective": args.objective,
+            "balanced_on": args.balanced_on,
+            "util_on": getattr(args, "util_on", "f1"),
+            "util_min": getattr(args, "util_min", None),
+            "lambda_util": getattr(args, "lambda_util", 1.0),
+            "per_seed": [
+                {
+                    "seed": s["seed"],
+                    "val_score": s["best_val_score"],
+                    "chosen_val_epoch": (s["best_val_row"] or {}).get("epoch"),
+                    "f1": (s["best_val_row"] or {}).get("f1"),
+                    "auc": (s["best_val_row"] or {}).get("auc"),
+                    "dp": (s["best_val_row"] or {}).get("dp"),
+                    "eo": (s["best_val_row"] or {}).get("eo"),
+                } for s in summ.get("per_seed", [])
+            ],
+        }
+        with (trial_dir / "chosen_val_debug.json").open("w") as f:
+            json.dump(dbg, f, indent=2)
+    except Exception as _e:
+        pass
+
     with (trial_dir / "trial_summary.json").open("w") as f:
         json.dump(summ, f, indent=2)
 
@@ -467,7 +509,7 @@ def main():
     ds.load_data()
 
     # Build seeds list
-    seeds = range(args.start_seed, args.start_seed + args.seed_num) # if (not args.seeds or len(args.seeds) == 0) else args.seeds
+    seeds = list(range(args.start_seed, args.start_seed + args.seed_num)) # if (not args.seeds or len(args.seeds) == 0) else args.seeds
 
     # Sampler & pruner
     sampler = optuna.samplers.TPESampler(n_startup_trials=10, multivariate=True) if args.sampler == "tpe" else optuna.samplers.RandomSampler()
