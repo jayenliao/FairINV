@@ -21,14 +21,18 @@ from pathlib import Path
 from typing import Dict, Any, Tuple, List
 from tqdm import tqdm
 
-import torch  # type: ignore
+import torch
 import optuna
 
 from args import get_args as get_base_args
 from data import FairDataset
 from utils import set_seed
 from utils import configure_threads
-from train import run_vanilla, run_edge_adder_unified, run_fairinv, load_best_overall_into_args
+# training entrypoints and snapshot helpers
+from train import run_vanilla, run_fairinv, run_edge_adder_unified
+from train import snapshot_clean_data, restore_from_snapshot
+# NIFA bridge
+from nifa_bridge import apply_nifa_attack
 
 # -----------------------------
 # Small utils
@@ -239,8 +243,6 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
     """Return a dict of suggested hyperparams for this (model, encoder, dataset)."""
     hp: Dict[str, Any] = {}
 
-    hp["layer_num"] = 1  # fixed to 1 for all models/encoders in this tuning setup
-
     # If only tuning attack, return NIFA hparams directly
     if tune_scope in {"attack","both"} and attack == "nifa":
         hp.update(_suggest_nifa_hparams(trial, dataset))
@@ -315,7 +317,19 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
     trial_dir = build_trial_dir(Path(args.log_root), args.model, args.encoder, args.dataset, args.objective, args.tag, study_stamp, trial.number, hp)
     ensure_dir(trial_dir)
     with (trial_dir / "args_trial.json").open("w") as f:
-        json.dump({"hparams": hp, "objective": args.objective, "balanced_on": args.balanced_on, "w_dp": args.w_dp, "w_eo": args.w_eo}, f, indent=2)
+        json.dump({
+            "hparams": hp,
+            "objective": args.objective,
+            "balanced_on": args.balanced_on,
+            "w_dp": args.w_dp,
+            "w_eo": args.w_eo,
+            "util_on": getattr(args, "util_on", "f1"),
+            "util_min": getattr(args, "util_min", None),
+            "lambda_util": getattr(args, "lambda_util", 1.0),
+        }, f, indent=2)
+
+    # Take a clean snapshot once; restore per seed to avoid cumulative mutations
+    clean_snap = snapshot_clean_data(data)
 
     # Run across seeds
     for seed in seeds:
@@ -333,15 +347,25 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
         if args.attack == "nifa":
             a.attack = "nifa"
         os.makedirs(a.seed_dir, exist_ok=True)
-
         set_seed(seed, use_cuda=a.cuda)
+
+        # fresh data per seed
+        data_seed = restore_from_snapshot(clean_snap, device)
+
+        # apply attack before training
+        if getattr(a, "attack", "none") == "nifa":
+            print("[tune] Applying NIFA attack before training…")
+            data_seed = apply_nifa_attack(a, data_seed)
+
+        # dispatch trainer on (possibly) attacked graph
         if a.model == "fairinv":
             pbar = tqdm(total=args.epochs, desc=f"Seed {seed}", unit="epoch", bar_format="{l_bar}{bar:30}{r_bar}")
-            run_fairinv(a, data, pbar)
+            run_fairinv(a, data_seed, pbar)
         elif a.model in ["edge_adder","edge_minmax"]:
-            run_edge_adder_unified(a, data, a.seed_dir)
+            run_edge_adder_unified(a, data_seed, a.seed_dir)
         else:  # vanilla
-            run_vanilla(a, data, a.seed_dir)
+            run_vanilla(a, data_seed, a.seed_dir)
+
 
     # Summarize
     summ = summarize_trial_dir(trial_dir, args.objective, args.balanced_on, args.w_dp, args.w_eo)
