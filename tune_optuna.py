@@ -151,12 +151,21 @@ def summarize_trial_dir(
 
     # after building per_seed
     f1_vals, auc_vals = [], []
+    dp_vals, eo_vals  = [], []
     for s in per_seed:
         r = s.get("best_val_row") or {}
         v_f1 = fetch_metric(r, "f1")
         v_auc = fetch_metric(r, "auc")
-        if v_f1 is not None: f1_vals.append(float(v_f1))
-        if v_auc is not None: auc_vals.append(float(v_auc))
+        v_dp = fetch_metric(r, "dp")
+        v_eo = fetch_metric(r, "eo")
+        if v_f1 is not None:
+            f1_vals.append(float(v_f1))
+        if v_auc is not None:
+            auc_vals.append(float(v_auc))
+        if v_dp is not None:
+            dp_vals.append(float(v_dp))
+        if v_eo is not None:
+            eo_vals.append(float(v_eo))
 
     def _mean_std(xs):
         if not xs: return None, None
@@ -166,6 +175,8 @@ def summarize_trial_dir(
 
     f1_mean, f1_std = _mean_std(f1_vals)
     auc_mean, auc_std = _mean_std(auc_vals)
+    dp_mean, dp_std = _mean_std(dp_vals)
+    eo_mean, eo_std = _mean_std(eo_vals)
 
     return {
         "val_mean": val_mean,
@@ -174,6 +185,8 @@ def summarize_trial_dir(
         "val_metric_stats": {
             "f1_mean": f1_mean, "f1_std": f1_std,
             "auc_mean": auc_mean, "auc_std": auc_std,
+            "dp_mean": dp_mean, "dp_std": dp_std,
+            "eo_mean": eo_mean, "eo_std": eo_std
         }
     }
 
@@ -415,10 +428,14 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
         json.dump(summ, f, indent=2)
 
     vm = summ.get("val_metric_stats", {}) or {}
-    f1_mean = vm.get("f1_mean", float("-inf"))
-    f1_std = vm.get("f1_std", float("inf"))
+    f1_mean  = vm.get("f1_mean", float("-inf"))
+    f1_std   = vm.get("f1_std", float("inf"))
     auc_mean = vm.get("auc_mean", float("-inf"))
-    auc_std = vm.get("auc_std", float("inf"))
+    auc_std  = vm.get("auc_std", float("inf"))
+    dp_mean  = vm.get("dp_mean", float("-inf"))
+    dp_std   = vm.get("dp_std", float("inf"))
+    eo_mean  = vm.get("eo_mean", float("-inf"))
+    eo_std   = vm.get("eo_std", float("inf"))
 
     if args.objective == "f1_mean_minus_std" and f1_mean is not None and f1_std is not None:
         val_score_for_study = float(f1_mean) - float(f1_std)
@@ -436,6 +453,10 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
     trial.set_user_attr("val_f1_std", f1_std)
     trial.set_user_attr("val_auc_mean", auc_mean)
     trial.set_user_attr("val_auc_std", auc_std)
+    trial.set_user_attr("val_dp_mean", dp_mean)
+    trial.set_user_attr("val_dp_std", dp_std)
+    trial.set_user_attr("val_eo_mean", eo_mean)
+    trial.set_user_attr("val_eo_std", eo_std)
 
     return float(val_score_for_study), float(test_mean), trial_dir
 

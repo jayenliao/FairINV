@@ -9,8 +9,8 @@ BASE_DIR="${1:-logs/optuna}"
 
 datasets=(bail pokec_z pokec_n nba german)
 backbones=(gcn gat gin sage sgc)
-metrics=(auc_f1_mean_minus_std)
-model="fairinv"
+metrics=(attack_balanced)
+model="vanilla"
 
 shopt -s nullglob
 for bb in "${backbones[@]}"; do

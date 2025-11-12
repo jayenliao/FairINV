@@ -2,7 +2,7 @@
 # gin.sh — Optuna tuning for NIFA attacks on vanilla gin (with --dry support)
 
 set -Eeuo pipefail
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-6}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 
 # ---------- CLI flags ----------
 DRY=${DRY:-0}
@@ -40,7 +40,7 @@ run_cmd() {
 }
 
 # ---------- Defaults (override via env) ----------
-DATASETS=(${DATASETS:-bail pokec_n pokec_z nba german})
+DATASETS=(${DATASETS:-pokec_z nba german bail pokec_n})
 MODELS=(${MODELS:-vanilla})
 ENCODERS=(${ENCODERS:-gin})
 

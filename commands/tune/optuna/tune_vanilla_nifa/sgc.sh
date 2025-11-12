@@ -40,7 +40,7 @@ run_cmd() {
 }
 
 # ---------- Defaults (override via env) ----------
-DATASETS=(${DATASETS:-bail pokec_n pokec_z nba german})
+DATASETS=(${DATASETS:-pokec_z nba german bail pokec_n})
 MODELS=(${MODELS:-vanilla})
 ENCODERS=(${ENCODERS:-sgc})
 
