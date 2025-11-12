@@ -1,0 +1,38 @@
+{
+  "number": 37,
+  "value": 0.16326183651779105,
+  "params": {
+    "nifa_theta": 0.5,
+    "nifa_alpha": 0.01,
+    "nifa_beta": 16,
+    "nifa_T": 28,
+    "nifa_loops_large": 18,
+    "nifa_loops_small": 15,
+    "nifa_lr": 0.0017232252685318724,
+    "nifa_ratio": 0.48922804271461673,
+    "nifa_mode": "uncertainty",
+    "nifa_node": 65,
+    "nifa_edge": 24
+  },
+  "user_attrs": {
+    "hparams": {
+      "nifa_theta": 0.5,
+      "nifa_alpha": 0.01,
+      "nifa_beta": 16,
+      "nifa_T": 28,
+      "nifa_lr": 0.0017232252685318724,
+      "nifa_ratio": 0.48922804271461673,
+      "nifa_mode": "uncertainty",
+      "nifa_node": 65,
+      "nifa_edge": 24,
+      "nifa_loops": 15
+    },
+    "val_mean": 0.16326183651779105,
+    "test_mean": 0.06694680211782997,
+    "val_f1_mean": 0.7517214228943283,
+    "val_f1_std": 0.008325743610472013,
+    "val_auc_mean": 0.8429049557967754,
+    "val_auc_std": 0.005472072852036297,
+    "trial_dir": "logs/tune_vanilla_nifa/bail/sgc/vanilla/attack_balanced/20251109-162254_nifa/trial_0037_036df09a"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "number": 51,
+  "value": 0.3156232094890712,
+  "params": {
+    "nifa_theta": 0.75,
+    "nifa_alpha": 0.02,
+    "nifa_beta": 16,
+    "nifa_T": 16,
+    "nifa_loops_large": 21,
+    "nifa_loops_small": 9,
+    "nifa_lr": 0.0007351846260529673,
+    "nifa_ratio": 0.319342048262153,
+    "nifa_mode": "degree",
+    "nifa_node": 180,
+    "nifa_edge": 52
+  },
+  "user_attrs": {
+    "hparams": {
+      "nifa_theta": 0.75,
+      "nifa_alpha": 0.02,
+      "nifa_beta": 16,
+      "nifa_T": 16,
+      "nifa_lr": 0.0007351846260529673,
+      "nifa_ratio": 0.319342048262153,
+      "nifa_mode": "degree",
+      "nifa_node": 180,
+      "nifa_edge": 52,
+      "nifa_loops": 21
+    },
+    "val_mean": 0.3156232094890712,
+    "test_mean": 0.061767534877630245,
+    "val_f1_mean": 0.6023334232958668,
+    "val_f1_std": 0.06621481546148346,
+    "val_auc_mean": 0.6969735078516704,
+    "val_auc_std": 0.08172995758856179,
+    "trial_dir": "logs/tune_vanilla_nifa/pokec_n/gat/vanilla/attack_balanced/20251109-232512_nifa/trial_0051_6a9c46d8"
+  }
+}

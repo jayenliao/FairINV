@@ -1,0 +1,42 @@
+{
+  "number": 55,
+  "value": 0.7227777777777777,
+  "params": {
+    "nifa_theta": 0.5,
+    "nifa_alpha": 0.05,
+    "nifa_beta": 8,
+    "nifa_T": 24,
+    "nifa_loops_large": 25,
+    "nifa_loops_small": 9,
+    "nifa_lr": 0.0009134842518854341,
+    "nifa_ratio": 0.7408911696613111,
+    "nifa_mode": "degree",
+    "nifa_node": 20,
+    "nifa_edge": 18
+  },
+  "user_attrs": {
+    "hparams": {
+      "nifa_theta": 0.5,
+      "nifa_alpha": 0.05,
+      "nifa_beta": 8,
+      "nifa_T": 24,
+      "nifa_lr": 0.0009134842518854341,
+      "nifa_ratio": 0.7408911696613111,
+      "nifa_mode": "degree",
+      "nifa_node": 20,
+      "nifa_edge": 18,
+      "nifa_loops": 9
+    },
+    "val_mean": 0.7227777777777777,
+    "test_mean": 0.6129984051036683,
+    "val_f1_mean": 0.6966147988027076,
+    "val_f1_std": 0.058446878432339304,
+    "val_auc_mean": 0.7210978835978836,
+    "val_auc_std": 0.04202525840490848,
+    "val_dp_mean": 0.37777777777777777,
+    "val_dp_std": 0.07323599975290809,
+    "val_eo_mean": 0.34500000000000003,
+    "val_eo_std": 0.07418071028089293,
+    "trial_dir": "logs/tune_vanilla_nifa/nba/gcn/vanilla/attack_balanced/20251111-000302_nifa/trial_0055_463cdf8a"
+  }
+}

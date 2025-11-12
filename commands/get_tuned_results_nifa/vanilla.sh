@@ -31,7 +31,7 @@ PYTHON_BIN="${PYTHON:-python}"
 UTIL_ON="${UTIL_ON:-f1}"
 LAMBDA_UTIL="${LAMBDA_UTIL:-1.0}"
 # UTIL_MIN can be unset meaning "no constraint".
-UTIL_MIN="${UTIL_MIN:-}"
+UTIL_MIN="${UTIL_MIN:-0.55}"
 
 # ---------- Known scenarios ----------
 DATASETS=(german bail pokec_z pokec_n nba)

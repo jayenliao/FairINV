@@ -13,6 +13,11 @@ logs/tune_vanilla_nifa/nba/gat/vanilla/attack_balanced/20251110-152911_nifa/best
 logs/tune_vanilla_nifa/german/gat/vanilla/attack_balanced/20251110-185527_nifa/best_overall.json
 
 ===== Backbone: GIN =====
+logs/tune_vanilla_nifa/bail/gin/vanilla/attack_balanced/20251109-162227_nifa/best_overall.json
+logs/tune_vanilla_nifa/pokec_z/gin/vanilla/attack_balanced/20251111-131726_nifa/best_overall.json
+logs/tune_vanilla_nifa/pokec_n/gin/vanilla/attack_balanced/20251109-235909_nifa/best_overall.json
+logs/tune_vanilla_nifa/nba/gin/vanilla/attack_balanced/20251111-224058_nifa/best_overall.json
+logs/tune_vanilla_nifa/german/gin/vanilla/attack_balanced/20251112-022908_nifa/best_overall.json
 
 ===== Backbone: SAGE =====
 logs/tune_vanilla_nifa/bail/sage/vanilla/attack_balanced/20251109-162056_nifa/best_overall.json
@@ -22,3 +27,8 @@ logs/tune_vanilla_nifa/nba/sage/vanilla/attack_balanced/20251110-200550_nifa/bes
 logs/tune_vanilla_nifa/german/sage/vanilla/attack_balanced/20251111-004634_nifa/best_overall.json
 
 ===== Backbone: SGC =====
+logs/tune_vanilla_nifa/bail/sgc/vanilla/attack_balanced/20251109-162254_nifa/best_overall.json
+logs/tune_vanilla_nifa/pokec_z/sgc/vanilla/attack_balanced/20251111-131842_nifa/best_overall.json
+logs/tune_vanilla_nifa/pokec_n/sgc/vanilla/attack_balanced/20251110-055638_nifa/best_overall.json
+logs/tune_vanilla_nifa/nba/sgc/vanilla/attack_balanced/20251111-233408_nifa/best_overall.json
+logs/tune_vanilla_nifa/german/sgc/vanilla/attack_balanced/20251112-033126_nifa/best_overall.json
