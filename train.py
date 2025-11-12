@@ -520,12 +520,15 @@ def load_best_overall_into_args(args):
 
     if not getattr(args, "best_overall_path", ""):
         return args
-    with open(args.best_overall_path, "r") as f:
-        obj = json.load(f)
-    print("Loaded best overall parameters from:", args.best_overall_path)
-    params = obj.get("params", {})
-    for k in params:
-        setattr(args, k, params[k])
+
+    for best_overall_path in args.best_overall_path:
+        with open(best_overall_path, "r") as f:
+            obj = json.load(f)
+        print("Loaded best overall parameters from:", best_overall_path)
+
+        params = obj.get("params", {})
+        for k in params:
+            setattr(args, k, params[k])
 
     if getattr(args, "lambda_eo", 0.0) == -1.0:
         print("Setting lambda_eo to lambda_dp")

@@ -56,7 +56,7 @@ def get_parser():
     parser.add_argument('--lse_tau', type=float, default=0.5)
 
     # load tuned HPs from Optuna output
-    parser.add_argument('--best_overall_path', type=str, default='',
+    parser.add_argument('--best_overall_path', type=str, default=[], nargs='+',
                         help='Path to an Optuna best_overall.json; if set, override lr/weight_decay/.. from it.')
 
     # --- Attack toggle ---
