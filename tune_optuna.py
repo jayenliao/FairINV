@@ -274,12 +274,13 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
             return hp
 
     # Common spaces: learning rate, weight decay, dropout, hidden size, layers
-    if dataset in SMALL:
-        hp["lr"] = trial.suggest_float("lr", 5e-4, 5e-2, log=True)
-        hp["weight_decay"] = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
-        hp["hid_dim"] = trial.suggest_categorical("hid_dim", [16, 32, 64])
-    else:  # LARGE
-        hp["lr"] = trial.suggest_float("lr", 1e-4, 5e-2, log=True)
+    if tune_scope in {"gnn", "both"}:
+        if dataset in SMALL:
+            hp["lr"] = trial.suggest_float("lr", 5e-4, 5e-2, log=True)
+            hp["weight_decay"] = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
+            hp["hid_dim"] = trial.suggest_categorical("hid_dim", [16, 32, 64])
+        else:  # LARGE
+            hp["lr"] = trial.suggest_float("lr", 1e-4, 5e-2, log=True)
         hp["weight_decay"] = trial.suggest_float("weight_decay", 1e-6, 3e-3, log=True)
         hp["hid_dim"] = trial.suggest_categorical("hid_dim", [32, 64, 128])
 
@@ -309,14 +310,17 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
         hp["env_num"] = trial.suggest_int("env_num", 2, 3)                      # #environments (groups)
         # partition_times impacts runtime heavily; keep default (3).
 
-    if model == "edge_adder":
+    if model == "edge_adder" and tune_scope in {"gnn","both","edge"}:
         # Candidate edges per node (compute grows with k)
         if dataset in SMALL:
             hp["edge_k"] = trial.suggest_int("edge_k", 1, 4)
         else:
             hp["edge_k"] = trial.suggest_int("edge_k", 1, 3)
-        hp["lambda_dp"] = trial.suggest_float("lambda_dp", 1e-3, 1.0, log=True)
         hp["lambda_edge_l1"] = trial.suggest_float("lambda_edge_l1", 1e-5, 1e-2, log=True)
+        use_zero_dp = trial.suggest_categorical("use_zero_dp", [True, False])
+        use_zero_eo = trial.suggest_categorical("use_zero_eo", [True, False])
+        hp["lambda_dp"] = 0.0 if use_zero_dp else trial.suggest_float("lambda_dp_pos", 1e-4, 100.0, log=True)
+        hp["lambda_eo"] = 0.0 if use_zero_eo else trial.suggest_float("lambda_eo_pos", 1e-4, 100.0, log=True)
 
     return hp
 
@@ -505,7 +509,7 @@ def make_parser():
 
     # Attack control (we’ll keep GNN HPs fixed and only tune attack HPs)
     # p.add_argument("--attack", choices=["none", "nifa"], default="none")
-    p.add_argument("--tune_scope", choices=["gnn", "attack", "both"], default="attack",
+    p.add_argument("--tune_scope", choices=["gnn", "ea", "attack", "both"], default="gnn",
                    help="What to tune: victim GNN, attack, or both. For NIFA studies use 'attack'.")
 
     # Optuna controls
