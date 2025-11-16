@@ -530,6 +530,13 @@ def load_best_overall_into_args(args):
         for k in params:
             setattr(args, k, params[k])
 
+    # Handle zero regularization flags
+    if getattr(args, "use_zero_dp", False):
+        setattr(args, "lambda_dp", 0.0)
+    if getattr(args, "use_zero_eo", False):
+        setattr(args, "lambda_eo", 0.0)
+
+    # Handle special sentinel values
     if getattr(args, "lambda_eo", 0.0) == -1.0:
         print("Setting lambda_eo to lambda_dp")
         setattr(args, "lambda_eo", args.lambda_dp)
