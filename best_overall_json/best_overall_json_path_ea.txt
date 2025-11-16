@@ -1,3 +1,10 @@
+===== Backbone: GCN =====
+logs/tune_ea/no_attack/bail/gcn/edge_adder/auc_f1_mean_minus_std/20251112-203540_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack/pokec_z/gcn/edge_adder/auc_f1_mean_minus_std/20251113-043254_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack/pokec_n/gcn/edge_adder/auc_f1_mean_minus_std/20251113-185523_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack/nba/gcn/edge_adder/auc_f1_mean_minus_std/20251114-060555_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack/german/gcn/edge_adder/auc_f1_mean_minus_std/20251114-100834_ea-no-attack/best_overall.json
+
 ===== Backbone: GAT =====
 logs/tune_ea/no_attack/bail/gat/edge_adder/auc_f1_mean_minus_std/20251112-203820_ea-no-attack/best_overall.json
 logs/tune_ea/no_attack/pokec_z/gat/edge_adder/auc_f1_mean_minus_std/20251113-163613_ea-no-attack/best_overall.json
