@@ -1,0 +1,34 @@
+# Bail
+logs/optuna/bail/gcn/edge_adder/auc_f1_mean_minus_std/20251007-102858_robust/best_overall.json
+logs/optuna/bail/gat/edge_adder/auc_f1_mean_minus_std/20251007-102912_robust/best_overall.json
+logs/optuna/bail/gin/edge_adder/auc_f1_mean_minus_std/20251007-102926_robust/best_overall.json
+logs/optuna/bail/sage/edge_adder/auc_f1_mean_minus_std/20251007-103010_robust/best_overall.json
+logs/optuna/bail/sgc/edge_adder/auc_f1_mean_minus_std/20251007-220415_robust/best_overall.json
+
+# Pokec_z
+logs/optuna/pokec_z/gcn/edge_adder/auc_f1_mean_minus_std/20251008-140347_robust/best_overall.json
+logs/optuna/pokec_z/gat/edge_adder/auc_f1_mean_minus_std/20251008-205103_robust/best_overall.json
+logs/optuna/pokec_z/gin/edge_adder/auc_f1_mean_minus_std/20251008-103836_robust/best_overall.json
+logs/optuna/pokec_z/sage/edge_adder/auc_f1_mean_minus_std/20251008-105805_robust/best_overall.json
+logs/optuna/pokec_z/sgc/edge_adder/auc_f1_mean_minus_std/20251007-103155_robust/best_overall.json
+
+# Pokec_n
+logs/optuna/pokec_n/gcn/edge_adder/auc_f1_mean_minus_std/20251009-121513_robust/best_overall.json
+logs/optuna/pokec_n/gat/edge_adder/auc_f1_mean_minus_std/20251010-183433_robust/best_overall.json
+logs/optuna/pokec_n/gin/edge_adder/auc_f1_mean_minus_std/20251008-211655_robust/best_overall.json
+logs/optuna/pokec_n/sage/edge_adder/auc_f1_mean_minus_std/20251008-214728_robust/best_overall.json
+logs/optuna/pokec_n/sgc/edge_adder/auc_f1_mean_minus_std/20251008-021014_robust/best_overall.json
+
+# NBA
+logs/optuna/nba/gcn/edge_adder/auc_f1/20251006-215512_auto75/best_overall.json
+logs/optuna/nba/gat/edge_adder/auc_f1/20251006-215936_auto75/best_overall.json
+logs/optuna/nba/gin/edge_adder/auc_f1/20251006-203336_auto75/best_overall.json
+logs/optuna/nba/sage/edge_adder/auc_f1/20251006-193506_auto75/best_overall.json
+logs/optuna/nba/sgc/edge_adder/auc_f1/20251006-210014_auto75/best_overall.json
+
+# German
+logs/optuna/german/gcn/edge_adder/auc_f1/20251006-113530_auto75/best_overall.json
+logs/optuna/german/gat/edge_adder/auc_f1/20251006-113632_auto75/best_overall.json
+logs/optuna/german/gin/edge_adder/auc_f1/20251006-113740_auto75/best_overall.json
+logs/optuna/german/sage/edge_adder/auc_f1/20251006-113758_auto75/best_overall.json
+logs/optuna/german/sgc/edge_adder/auc_f1/20251006-113824_auto75/best_overall.json

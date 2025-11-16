@@ -6,18 +6,18 @@
 set -euo pipefail
 
 BASE_DIR="${1:-logs/optuna}"
+MODEL="${2:-vanilla}"
 
 datasets=(bail pokec_z pokec_n nba german)
 backbones=(gcn gat gin sage sgc)
-metrics=(attack_balanced)
-model="vanilla"
+metrics=("auc_f1" "auc_f1_mean_minus_std" "attack_balanced")
 
 shopt -s nullglob
 for bb in "${backbones[@]}"; do
   echo "===== Backbone: ${bb^^} ====="
   for ds in "${datasets[@]}"; do
     for metric in "${metrics[@]}"; do
-      matches=("$BASE_DIR/$ds/$bb/$model/$metric/"*/best_overall.json)
+      matches=("$BASE_DIR/$ds/$bb/$MODEL/$metric/"*/best_overall.json)
       for f in "${matches[@]}"; do
         printf '%s\n' "$f"
       done

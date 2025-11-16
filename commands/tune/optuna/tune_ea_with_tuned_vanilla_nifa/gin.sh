@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gcn.sh — Optuna tuning for EdgeAdder with GCN backbone (using fixed tuned vanilla GCN HPs)
+# gin.sh — Optuna tuning for EdgeAdder with gin backbone (using fixed tuned vanilla gin HPs)
 # (with --dry support)
 
 set -Eeuo pipefail
@@ -9,7 +9,7 @@ export CUDA_VISIBLE_DEVICES="4"
 DRY=${DRY:-0}
 show_help() {
   cat <<'H'
-Usage: bash gcn.sh [--dry|-n] [--help|-h]
+Usage: bash gin.sh [--dry|-n] [--help|-h]
 
 Flags:
   --dry, -n   Print commands without executing them.
@@ -43,7 +43,7 @@ run_cmd() {
 # ---------- Defaults (override via env) ----------
 DATASETS=(${DATASETS:-bail pokec_z pokec_n nba german})
 MODELS=(${MODELS:-edge_adder})
-ENCODERS=(${ENCODERS:-gcn})
+ENCODERS=(${ENCODERS:-gin})
 ATTACK=${ATTACK:-none}
 TUNE_SCOPE=${TUNE_SCOPE:-edge_adder}
 
@@ -69,11 +69,11 @@ STORAGE=${STORAGE:-}
 TAG=${TAG:-ea-no-attack}
 
 declare -A best_paths=(
-  [bail]="best_overall_json/vanilla/gcn/bail.json"
-  [pokec_z]="best_overall_json/vanilla/gcn/pokec_z.json"
-  [pokec_n]="best_overall_json/vanilla/gcn/pokec_n.json"
-  [nba]="best_overall_json/vanilla/gcn/nba.json"
-  [german]="best_overall_json/vanilla/gcn/german.json"
+  [bail]="best_overall_json/vanilla/gin/bail.json"
+  [pokec_z]="best_overall_json/vanilla/gin/pokec_z.json"
+  [pokec_n]="best_overall_json/vanilla/gin/pokec_n.json"
+  [nba]="best_overall_json/vanilla/gin/nba.json"
+  [german]="best_overall_json/vanilla/gin/german.json"
 )
 
 echo "== NIFA tuning with Optuna =="

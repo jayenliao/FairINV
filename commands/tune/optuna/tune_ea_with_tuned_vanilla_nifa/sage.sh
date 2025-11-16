@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# gcn.sh — Optuna tuning for EdgeAdder with GCN backbone (using fixed tuned vanilla GCN HPs)
+# sage.sh — Optuna tuning for EdgeAdder with sage backbone (using fixed tuned vanilla sage HPs)
 # (with --dry support)
 
 set -Eeuo pipefail
-export CUDA_VISIBLE_DEVICES="4"
+export CUDA_VISIBLE_DEVICES="6"
 
 # ---------- CLI flags ----------
 DRY=${DRY:-0}
 show_help() {
   cat <<'H'
-Usage: bash gcn.sh [--dry|-n] [--help|-h]
+Usage: bash sage.sh [--dry|-n] [--help|-h]
 
 Flags:
   --dry, -n   Print commands without executing them.
@@ -43,7 +43,7 @@ run_cmd() {
 # ---------- Defaults (override via env) ----------
 DATASETS=(${DATASETS:-bail pokec_z pokec_n nba german})
 MODELS=(${MODELS:-edge_adder})
-ENCODERS=(${ENCODERS:-gcn})
+ENCODERS=(${ENCODERS:-sage})
 ATTACK=${ATTACK:-none}
 TUNE_SCOPE=${TUNE_SCOPE:-edge_adder}
 
@@ -69,11 +69,11 @@ STORAGE=${STORAGE:-}
 TAG=${TAG:-ea-no-attack}
 
 declare -A best_paths=(
-  [bail]="best_overall_json/vanilla/gcn/bail.json"
-  [pokec_z]="best_overall_json/vanilla/gcn/pokec_z.json"
-  [pokec_n]="best_overall_json/vanilla/gcn/pokec_n.json"
-  [nba]="best_overall_json/vanilla/gcn/nba.json"
-  [german]="best_overall_json/vanilla/gcn/german.json"
+  [bail]="best_overall_json/vanilla/sage/bail.json"
+  [pokec_z]="best_overall_json/vanilla/sage/pokec_z.json"
+  [pokec_n]="best_overall_json/vanilla/sage/pokec_n.json"
+  [nba]="best_overall_json/vanilla/sage/nba.json"
+  [german]="best_overall_json/vanilla/sage/german.json"
 )
 
 echo "== NIFA tuning with Optuna =="
