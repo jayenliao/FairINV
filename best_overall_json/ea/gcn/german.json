@@ -1,0 +1,33 @@
+{
+  "number": 61,
+  "value": 0.749590048830196,
+  "params": {
+    "dropout": 0.001037842915800724,
+    "edge_k": 1,
+    "lambda_edge_l1": 0.004677409982912349,
+    "use_zero_dp": false,
+    "use_zero_eo": false,
+    "lambda_dp": 0.002449272691626842,
+    "lambda_eo": 0.9527572057786334
+  },
+  "user_attrs": {
+    "hparams": {
+      "dropout": 0.001037842915800724,
+      "edge_k": 1,
+      "lambda_edge_l1": 0.004677409982912349,
+      "lambda_dp": 0.002449272691626842,
+      "lambda_eo": 0.9527572057786334
+    },
+    "val_mean": 0.8299877036698252,
+    "test_mean": 0.4561673357591066,
+    "val_f1_mean": 0.8343409011145325,
+    "val_f1_std": 0.003184472078987506,
+    "val_auc_mean": 0.6932038095238096,
+    "val_auc_std": 0.025180140898962602,
+    "val_dp_mean": 0.002643795735305676,
+    "val_dp_std": 0.0031171735242390823,
+    "val_eo_mean": 0.0017094017094017033,
+    "val_eo_std": 0.0021622411351578585,
+    "trial_dir": "logs/tune_ea/no_attack/german/gcn/edge_adder/auc_f1_mean_minus_std/20251114-100834_ea-no-attack/trial_0061_fdde14bb"
+  }
+}
