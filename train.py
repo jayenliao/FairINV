@@ -349,7 +349,7 @@ def run_edge_adder_unified(args, data, seed_dir):
         worst_obj["eo"]  = eo
         elog.log(ep, "val", worst_obj)
 
-        score = (auc + f1) / 2 #- dp - eo
+        score = (auc + f1) / 2 - dp - eo
         if score > best['score']:
             best['score'] = score
             best['state'] = {'backbone': backbone.state_dict(), 'clf': clf.state_dict()}

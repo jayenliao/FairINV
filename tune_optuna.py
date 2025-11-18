@@ -88,6 +88,13 @@ def objective_value(
 
     if objective == "balanced":
         return float(m) - w_dp * float(dp) - w_eo * float(eo)
+    if objective == "auc_f1_balanced":
+        v_auc = fetch_metric(row, "auc")
+        v_f1 = fetch_metric(row, "f1")
+        if v_auc is None or v_f1 is None:
+            return float("-inf")
+        score = 0.5 * (float(v_auc) + float(v_f1)) - w_dp * float(dp) - w_eo * float(eo)
+        return score
     if objective == "attack_dp_eo":
         _need(["dp", "eo"])
         return w_dp * float(dp) + w_eo * float(eo)
@@ -166,6 +173,23 @@ def summarize_trial_dir(
             dp_vals.append(float(v_dp))
         if v_eo is not None:
             eo_vals.append(float(v_eo))
+
+    return {
+        "val_mean": val_mean,
+        "test_mean": test_mean,
+        "per_seed": per_seed,
+        "val_metric_stats": {
+            "f1_mean": stats.mean(f1_vals) if f1_vals else None,
+            "f1_std": stats.pstdev(f1_vals) if len(f1_vals) > 1 else 0.0,
+            "auc_mean": stats.mean(auc_vals) if auc_vals else None,
+            "auc_std": stats.pstdev(auc_vals) if len(auc_vals) > 1 else 0.0,
+            "dp_mean": stats.mean(dp_vals) if dp_vals else None,
+            "dp_std": stats.pstdev(dp_vals) if len(dp_vals) > 1 else 0.0,
+            "eo_mean": stats.mean(eo_vals) if eo_vals else None,
+            "eo_std": stats.pstdev(eo_vals) if len(eo_vals) > 1 else 0.0,
+        }
+    }
+
 
     def _mean_std(xs):
         if not xs: return None, None
@@ -445,6 +469,8 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
         val_score_for_study = float(f1_mean) - float(f1_std)
     elif args.objective == "auc_f1_mean_minus_std" and all(v is not None for v in [f1_mean, f1_std, auc_mean, auc_std]):
         val_score_for_study = 0.5 * ((float(f1_mean) - float(f1_std)) + (float(auc_mean) - float(auc_std)))
+    elif args.objective == "auc_f1_balanced":
+        val_score_for_study = summ["val_mean"] - auc_std - f1_std - dp_std - eo_std
     else:
         val_score_for_study = summ["val_mean"] if summ["val_mean"] is not None else float("-inf")
 
@@ -497,7 +523,7 @@ def make_parser():
 
     # Objective
     p.add_argument("--objective", type=str, default="auc_f1",
-                   choices=["f1", "auc", "auc_f1", "balanced",
+                   choices=["f1", "auc", "auc_f1", "balanced", "auc_f1_balanced",
                             "f1_mean_minus_std", "auc_f1_mean_minus_std",
                             "attack_dp_eo", "attack_balanced"])
     p.add_argument("--balanced_on", choices=["auc", "f1"], default="f1")
