@@ -3,7 +3,7 @@
 # (with --dry support)
 
 set -Eeuo pipefail
-export CUDA_VISIBLE_DEVICES="4"
+export CUDA_VISIBLE_DEVICES="2"
 
 # ---------- CLI flags ----------
 DRY=${DRY:-0}
@@ -51,18 +51,18 @@ START_SEED=${START_SEED:-0}
 SEED_NUM=${SEED_NUM:-10}
 N_TRIALS=${N_TRIALS:-64}
 EPOCHS=${EPOCHS:-1000}
-N_THREADS=${N_THREADS:-4}
+N_THREADS=${N_THREADS:-12}
 
-OBJ=${OBJ:-auc_f1_mean_minus_std}
+OBJ=${OBJ:-auc_f1_balanced}
 BAL_ON=${BAL_ON:-f1}
-W_DP=${W_DP:-1.0}
-W_EO=${W_EO:-1.0}
+W_DP=${W_DP:-1.5}
+W_EO=${W_EO:-1.5}
 
 UTIL_ON=${UTIL_ON:-f1}
 UTIL_MIN=${UTIL_MIN:-0.55}
 LAMBDA_UTIL=${LAMBDA_UTIL:-1.0}
 
-LOG_ROOT=${LOG_ROOT:-logs/tune_ea/no_attack}
+LOG_ROOT=${LOG_ROOT:-logs/tune_ea/no_attack_obj}
 SAMPLER=${SAMPLER:-tpe}
 PRUNER=${PRUNER:-median}
 STORAGE=${STORAGE:-}
