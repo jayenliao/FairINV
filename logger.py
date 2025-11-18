@@ -35,13 +35,13 @@ class EpochLogger:
         split ∈ {"train","val","test"}; metrics like {"loss":..., "auc":..., "f1":..., "dp":..., "eo":...}
         """
         # --- TensorBoard ---
-        for k, v in metrics.items():
-            if v is None:
-                continue
-            try:
-                self.tb.add_scalar(f"{split}/{k}", float(v), epoch)
-            except Exception:
-                pass  # ignore non-numerics
+        # for k, v in metrics.items():
+        #     if v is None:
+        #         continue
+        #     try:
+        #         self.tb.add_scalar(f"{split}/{k}", float(v), epoch)
+        #     except Exception:
+        #         pass  # ignore non-numerics
 
         # --- CSV ---
         row = {"epoch": epoch, "split": split, **metrics}
@@ -67,5 +67,6 @@ class EpochLogger:
                 jf.write("\n")
 
     def close(self):
-        self.tb.flush()
-        self.tb.close()
+        pass
+        # self.tb.flush()
+        # self.tb.close()
