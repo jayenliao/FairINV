@@ -342,7 +342,7 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
             hp["edge_k"] = trial.suggest_int("edge_k", 1, 3)
         hp["lambda_edge_l1"] = trial.suggest_float("lambda_edge_l1", 1e-5, 1e-2, log=True)
         use_zero_dp = trial.suggest_categorical("use_zero_dp", [True, False])
-        use_zero_eo = trial.suggest_categorical("use_zero_eo", [True, False])
+        use_zero_eo = False if use_zero_dp else trial.suggest_categorical("use_zero_eo", [True, False])
         hp["lambda_dp"] = 0.0 if use_zero_dp else trial.suggest_float("lambda_dp", 1e-4, 100.0, log=True)
         hp["lambda_eo"] = 0.0 if use_zero_eo else trial.suggest_float("lambda_eo", 1e-4, 100.0, log=True)
 
