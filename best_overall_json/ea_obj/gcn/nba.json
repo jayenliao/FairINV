@@ -1,0 +1,32 @@
+{
+  "number": 13,
+  "value": 0.7134241413049112,
+  "params": {
+    "dropout": 0.5543880474874654,
+    "edge_k": 4,
+    "lambda_edge_l1": 5.4442729226854735e-05,
+    "use_zero_dp": false,
+    "use_zero_eo": true,
+    "lambda_dp": 0.052378070654105144
+  },
+  "user_attrs": {
+    "hparams": {
+      "dropout": 0.5543880474874654,
+      "edge_k": 4,
+      "lambda_edge_l1": 5.4442729226854735e-05,
+      "lambda_dp": 0.052378070654105144,
+      "lambda_eo": 0.0
+    },
+    "val_mean": 0.7550824331534594,
+    "test_mean": -0.5620372602623563,
+    "val_f1_mean": 0.7789611626032151,
+    "val_f1_std": 0.02073137078523671,
+    "val_auc_mean": 0.7856481481481481,
+    "val_auc_std": 0.004699491778701214,
+    "val_dp_mean": 0.006481481481481488,
+    "val_dp_std": 0.00555555555555556,
+    "val_eo_mean": 0.011666666666666659,
+    "val_eo_std": 0.010671873729054742,
+    "trial_dir": "logs/tune_ea/no_attack_obj/nba/gcn/edge_adder/auc_f1_balanced/20251119-080825_ea-no-attack/trial_0013_111550b1"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "number": 62,
+  "value": 0.7544506679574688,
+  "params": {
+    "dropout": 0.5361440946065115,
+    "edge_k": 2,
+    "lambda_edge_l1": 0.0004096893702646063,
+    "use_zero_dp": false,
+    "use_zero_eo": false,
+    "lambda_dp": 0.30415394456382167,
+    "lambda_eo": 0.002883568238692063
+  },
+  "user_attrs": {
+    "hparams": {
+      "dropout": 0.5361440946065115,
+      "edge_k": 2,
+      "lambda_edge_l1": 0.0004096893702646063,
+      "lambda_dp": 0.30415394456382167,
+      "lambda_eo": 0.002883568238692063
+    },
+    "val_mean": 0.7826671301493313,
+    "test_mean": 0.6704104982329029,
+    "val_f1_mean": 0.8350046368323603,
+    "val_f1_std": 0.01273719826584393,
+    "val_auc_mean": 0.9211807181799536,
+    "val_auc_std": 0.007612105430935145,
+    "val_dp_mean": 0.059197313358395426,
+    "val_dp_std": 0.004494655883410387,
+    "val_eo_mean": 0.004419718212821666,
+    "val_eo_std": 0.0033725026116729648,
+    "trial_dir": "logs/tune_ea/no_attack_obj/bail/gat/edge_adder/auc_f1_balanced/20251118-103812_ea-no-attack/trial_0062_e987e9f6"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "number": 30,
+  "value": 0.756555424642258,
+  "params": {
+    "dropout": 0.07760024673291382,
+    "edge_k": 4,
+    "lambda_edge_l1": 4.990618821375729e-05,
+    "use_zero_dp": true,
+    "lambda_eo": 95.03734694702946
+  },
+  "user_attrs": {
+    "hparams": {
+      "dropout": 0.07760024673291382,
+      "edge_k": 4,
+      "lambda_edge_l1": 4.990618821375729e-05,
+      "lambda_dp": 0.0,
+      "lambda_eo": 95.03734694702946
+    },
+    "val_mean": 0.7615285154061625,
+    "test_mean": 0.5456337343064585,
+    "val_f1_mean": 0.8235294117647058,
+    "val_f1_std": 0.0,
+    "val_auc_mean": 0.6995276190476191,
+    "val_auc_std": 0.0049730907639044634,
+    "val_dp_mean": 0.0,
+    "val_dp_std": 0.0,
+    "val_eo_mean": 0.0,
+    "val_eo_std": 0.0,
+    "trial_dir": "logs/tune_ea/no_attack_obj/german/gcn/edge_adder/auc_f1_balanced/20251119-110904_ea-no-attack/trial_0030_2e5fe850"
+  }
+}

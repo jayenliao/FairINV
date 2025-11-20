@@ -10,7 +10,7 @@ MODEL="${2:-vanilla}"
 
 datasets=(bail pokec_z pokec_n nba german)
 backbones=(gcn gat gin sage sgc)
-metrics=("auc_f1" "auc_f1_mean_minus_std" "attack_balanced")
+metrics=("auc_f1" "auc_f1_mean_minus_std" "attack_balanced" "auc_f1_balanced")
 
 shopt -s nullglob
 for bb in "${backbones[@]}"; do

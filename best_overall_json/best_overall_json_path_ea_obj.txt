@@ -1,0 +1,34 @@
+===== Backbone: GCN =====
+logs/tune_ea/no_attack_obj/bail/gcn/edge_adder/auc_f1_balanced/20251118-103811_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/pokec_z/gcn/edge_adder/auc_f1_balanced/20251118-151941_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/pokec_n/gcn/edge_adder/auc_f1_balanced/20251119-000510_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/nba/gcn/edge_adder/auc_f1_balanced/20251119-080825_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/german/gcn/edge_adder/auc_f1_balanced/20251119-110904_ea-no-attack/best_overall.json
+
+===== Backbone: GAT =====
+logs/tune_ea/no_attack_obj/bail/gat/edge_adder/auc_f1_balanced/20251118-103812_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/pokec_z/gat/edge_adder/auc_f1_balanced/20251119-001406_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/pokec_n/gat/edge_adder/auc_f1_balanced/20251119-153215_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/nba/gat/edge_adder/auc_f1_balanced/20251120-052611_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/german/gat/edge_adder/auc_f1_balanced/20251120-080629_ea-no-attack/best_overall.json
+
+===== Backbone: GIN =====
+logs/tune_ea/no_attack_obj/bail/gin/edge_adder/auc_f1_balanced/20251118-103816_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/pokec_z/gin/edge_adder/auc_f1_balanced/20251118-140057_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/pokec_n/gin/edge_adder/auc_f1_balanced/20251118-193606_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/nba/gin/edge_adder/auc_f1_balanced/20251119-015636_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/german/gin/edge_adder/auc_f1_balanced/20251119-045920_ea-no-attack/best_overall.json
+
+===== Backbone: SAGE =====
+logs/tune_ea/no_attack_obj/bail/sage/edge_adder/auc_f1_balanced/20251118-103820_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/pokec_z/sage/edge_adder/auc_f1_balanced/20251118-143156_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/pokec_n/sage/edge_adder/auc_f1_balanced/20251118-194800_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/nba/sage/edge_adder/auc_f1_balanced/20251119-034832_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/german/sage/edge_adder/auc_f1_balanced/20251119-063608_ea-no-attack/best_overall.json
+
+===== Backbone: SGC =====
+logs/tune_ea/no_attack_obj/bail/sgc/edge_adder/auc_f1_balanced/20251118-103823_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/pokec_z/sgc/edge_adder/auc_f1_balanced/20251118-150449_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/pokec_n/sgc/edge_adder/auc_f1_balanced/20251118-225714_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/nba/sgc/edge_adder/auc_f1_balanced/20251119-061440_ea-no-attack/best_overall.json
+logs/tune_ea/no_attack_obj/german/sgc/edge_adder/auc_f1_balanced/20251119-084354_ea-no-attack/best_overall.json

@@ -1,0 +1,33 @@
+{
+  "number": 24,
+  "value": 0.7912476237355685,
+  "params": {
+    "dropout": 0.5100584336229137,
+    "edge_k": 1,
+    "lambda_edge_l1": 5.380371012920206e-05,
+    "use_zero_dp": false,
+    "use_zero_eo": false,
+    "lambda_dp": 0.022120487577473542,
+    "lambda_eo": 18.19610498076125
+  },
+  "user_attrs": {
+    "hparams": {
+      "dropout": 0.5100584336229137,
+      "edge_k": 1,
+      "lambda_edge_l1": 5.380371012920206e-05,
+      "lambda_dp": 0.022120487577473542,
+      "lambda_eo": 18.19610498076125
+    },
+    "val_mean": 0.7936424056048873,
+    "test_mean": 0.7686360320904408,
+    "val_f1_mean": 0.8075418747485676,
+    "val_f1_std": 0.0005525883134257058,
+    "val_auc_mean": 0.8938338759248545,
+    "val_auc_std": 0.00041845857046732623,
+    "val_dp_mean": 0.03731110898706915,
+    "val_dp_std": 0.0007659472954954094,
+    "val_eo_mean": 0.0007192041674800254,
+    "val_eo_std": 0.000657787689930443,
+    "trial_dir": "logs/tune_ea/no_attack_obj/bail/gcn/edge_adder/auc_f1_balanced/20251118-103811_ea-no-attack/trial_0024_1a184f87"
+  }
+}

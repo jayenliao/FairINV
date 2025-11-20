@@ -1,0 +1,32 @@
+{
+  "number": 32,
+  "value": 0.7252169793699693,
+  "params": {
+    "dropout": 0.14338907766567244,
+    "edge_k": 3,
+    "lambda_edge_l1": 7.377565679933996e-05,
+    "use_zero_dp": false,
+    "use_zero_eo": true,
+    "lambda_dp": 0.0072188979795756066
+  },
+  "user_attrs": {
+    "hparams": {
+      "dropout": 0.14338907766567244,
+      "edge_k": 3,
+      "lambda_edge_l1": 7.377565679933996e-05,
+      "lambda_dp": 0.0072188979795756066,
+      "lambda_eo": 0.0
+    },
+    "val_mean": 0.7360449735449734,
+    "test_mean": 0.3142701800133162,
+    "val_f1_mean": 0.7,
+    "val_f1_std": 0.0,
+    "val_auc_mean": 0.772089947089947,
+    "val_auc_std": 0.010827994175004145,
+    "val_dp_mean": 0.0,
+    "val_dp_std": 0.0,
+    "val_eo_mean": 0.0,
+    "val_eo_std": 0.0,
+    "trial_dir": "logs/tune_ea/no_attack_obj/nba/gin/edge_adder/auc_f1_balanced/20251119-015636_ea-no-attack/trial_0032_42483bb2"
+  }
+}

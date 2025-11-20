@@ -1,0 +1,33 @@
+{
+  "number": 51,
+  "value": 0.7492870595166449,
+  "params": {
+    "dropout": 0.20364062941177097,
+    "edge_k": 1,
+    "lambda_edge_l1": 8.756066206064496e-05,
+    "use_zero_dp": false,
+    "use_zero_eo": false,
+    "lambda_dp": 0.34141964467547276,
+    "lambda_eo": 0.006160196282111795
+  },
+  "user_attrs": {
+    "hparams": {
+      "dropout": 0.20364062941177097,
+      "edge_k": 1,
+      "lambda_edge_l1": 8.756066206064496e-05,
+      "lambda_dp": 0.34141964467547276,
+      "lambda_eo": 0.006160196282111795
+    },
+    "val_mean": 0.7609891978424814,
+    "test_mean": 0.6707057397500397,
+    "val_f1_mean": 0.740678490100125,
+    "val_f1_std": 0.005202407178322353,
+    "val_auc_mean": 0.7938178863467619,
+    "val_auc_std": 0.0024329792862230874,
+    "val_dp_mean": 0.0028870921532617943,
+    "val_dp_std": 0.003183404379460404,
+    "val_eo_mean": 0.0012855681007128638,
+    "val_eo_std": 0.0008833474818307665,
+    "trial_dir": "logs/tune_ea/no_attack_obj/pokec_z/gat/edge_adder/auc_f1_balanced/20251119-001406_ea-no-attack/trial_0051_e6c037eb"
+  }
+}
