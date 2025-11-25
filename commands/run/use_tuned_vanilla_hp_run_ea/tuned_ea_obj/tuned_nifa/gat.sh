@@ -1,7 +1,7 @@
 set -euo pipefail
 CUDA_VISIBLE_DEVICES=3
 
-echo "Attacking Vanilla GAT for 5 datasets x 10 seeds..."
+echo "Attacking EdgeAdder with GAT backbone for 5 datasets x 10 seeds..."
 echo
 
 # Define datasets and their tuned best_overall.json paths

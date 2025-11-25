@@ -1,7 +1,7 @@
 set -euo pipefail
-CUDA_VISIBLE_DEVICES=1
+CUDA_VISIBLE_DEVICES=2
 
-echo "Attacking Vanilla sage for 5 datasets x 10 seeds..."
+echo "Attacking EdgeAdder with sage backbone for 5 datasets x 10 seeds..."
 echo
 
 # Define datasets and their tuned best_overall.json paths
@@ -22,11 +22,11 @@ declare -A best_nifa_paths=(
 )
 
 declare -A best_ea_paths=(
-  [bail]="best_overall_json/ea/sage/bail.json"
-  [pokec_z]="best_overall_json/ea/sage/pokec_z.json"
-  [pokec_n]="best_overall_json/ea/sage/pokec_n.json"
-  [nba]="best_overall_json/ea/sage/nba.json"
-  [german]="best_overall_json/ea/sage/german.json"
+  [bail]="best_overall_json/ea_obj/sage/bail.json"
+  [pokec_z]="best_overall_json/ea_obj/sage/pokec_z.json"
+  [pokec_n]="best_overall_json/ea_obj/sage/pokec_n.json"
+  [nba]="best_overall_json/ea_obj/sage/nba.json"
+  [german]="best_overall_json/ea_obj/sage/german.json"
 )
 
 # Common args
@@ -36,7 +36,7 @@ attack="nifa"
 epochs=1000
 start_seed=0
 seed_num=10
-log_dir="logs/use_tuned_vanilla_hp_run_ea/tuned_ea/tuned_nifa/"
+log_dir="logs/use_tuned_vanilla_hp_run_ea/tuned_ea_obj/tuned_nifa/"
 
 # Loop over datasets
 
