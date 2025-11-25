@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv, json, os, time
 from pathlib import Path
 from typing import Dict, Any, Optional
-from tensorboardX import SummaryWriter
+# from tensorboardX import SummaryWriter
 
 class EpochLogger:
     """
@@ -16,7 +16,7 @@ class EpochLogger:
         self._t0 = time.time()
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
-        self.tb = SummaryWriter(log_dir=str(self.run_dir))
+        # self.tb = SummaryWriter(log_dir=str(self.run_dir))
         self.csv_path = self.run_dir / "metrics.csv"
         self.jsonl_path = self.run_dir / "metrics.jsonl"
         self._csv_header_written = False
