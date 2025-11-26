@@ -149,10 +149,13 @@ def _soft_dp_from_logits(logits: torch.Tensor, sens: torch.Tensor, idx: torch.Te
         return (p0 - p1).pow(2)
     return probs.new_zeros(())
 
-def _soft_eo_from_logits(logits: torch.Tensor,
-                         labels: torch.Tensor,
-                         sens: torch.Tensor,
-                         idx: torch.Tensor):
+def _soft_eo_from_logits(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    sens: torch.Tensor,
+    idx: torch.Tensor,
+    mode: str = "tpr",
+):
     """
     Soft equal opportunity on a subset (condition on Y=1, no thresholding).
     Returns (E[p̂ | S=0, Y=1] - E[p̂ | S=1, Y=1])^2 where p̂ = sigmoid(logit).
@@ -165,15 +168,37 @@ def _soft_eo_from_logits(logits: torch.Tensor,
     if not pos_mask.any():
         return probs.new_zeros(())
 
-    idx_pos = idx[pos_mask]                    # indices with Y=1
-    s_pos = sens[idx_pos].long()               # sens for positives
-    if (s_pos == 0).any() and (s_pos == 1).any():
-        p_pos = probs[idx_pos]                 # predicted prob among Y=1
-        p0 = p_pos[s_pos == 0].mean()
-        p1 = p_pos[s_pos == 1].mean()
-        return (p0 - p1).pow(2)
+    if mode == "tpr":
+        idx_pos = idx[pos_mask]                    # indices with Y=1
+        s_pos = sens[idx_pos].long()               # sens for positives
+        if (s_pos == 0).any() and (s_pos == 1).any():
+            p_pos = probs[idx_pos]                 # predicted prob among Y=1
+            p0 = p_pos[s_pos == 0].mean()
+            p1 = p_pos[s_pos == 1].mean()
+            return (p0 - p1).pow(2)
+    elif mode == "fpr":
+        idx_neg = idx[~pos_mask]                   # indices with Y=0
+        s_neg = sens[idx_neg].long()               # sens for negatives
+        if (s_neg == 0).any() and (s_neg == 1).any():
+            p_neg = probs[idx_neg]                 # predicted prob among Y=0
+            p0 = p_neg[s_neg == 0].mean()
+            p1 = p_neg[s_neg == 1].mean()
+            return (p0 - p1).pow(2)
 
     return probs.new_zeros(())
+
+def _get_eo_loss(logits, Y, data, idx_tr, eo_mode):
+    if eo_mode == "tpr":
+        loss_eo  = _soft_eo_from_logits(logits, Y, data.sens, idx_tr, mode="tpr")
+    elif eo_mode == "fpr":
+        loss_eo  = _soft_eo_from_logits(logits, Y, data.sens, idx_tr, mode="fpr")
+    elif eo_mode == "both":
+        loss_eo_tpr = _soft_eo_from_logits(logits, Y, data.sens, idx_tr, mode="tpr")
+        loss_eo_fpr = _soft_eo_from_logits(logits, Y, data.sens, idx_tr, mode="fpr")
+        loss_eo = loss_eo_tpr + loss_eo_fpr
+    else:
+        raise ValueError(f"Unknown eo_mode: {eo_mode}")
+    return loss_eo
 
 def _blend(A_base: SparseTensor, edge_adder: EdgeAdder | None):
     """Return blended SparseTensor A = A_base (+ soft edges if provided)."""
@@ -246,6 +271,7 @@ def run_edge_adder_unified(args, data, seed_dir):
 
     lam_dp  = float(getattr(args, "lambda_dp", 0.1))
     lam_eo  = float(getattr(args, "lambda_eo", 0.0))
+    eo_mode = getattr(args, "eo_mode", "tpr")
     lam_l1  = float(getattr(args, "lambda_edge_l1", 1e-4))
     reduce  =       getattr(args, "max_reduce", "max")
     tau     = float(getattr(args, "lse_tau", 0.5))
@@ -274,7 +300,7 @@ def run_edge_adder_unified(args, data, seed_dir):
                 logits = clf(H).squeeze(1)
                 loss_bce = F.binary_cross_entropy_with_logits(logits[idx_tr], Y[idx_tr].float())
                 loss_dp  = _soft_dp_from_logits(logits, data.sens, idx_tr)
-                loss_eo  = _soft_eo_from_logits(logits, Y, data.sens, idx_tr)
+                loss_eo  = _get_eo_loss(logits, Y, data, idx_tr, eo_mode)
                 loss_l1  = ed.weights().abs().sum()
                 loss_total = loss_bce + (lam_dp * loss_dp) + (lam_eo * loss_eo) + (lam_l1 * loss_l1)
                 loss_list.append(loss_total)
@@ -328,7 +354,7 @@ def run_edge_adder_unified(args, data, seed_dir):
                 logit_val = clf(H_val).squeeze(1)
                 loss_bce_v = F.binary_cross_entropy_with_logits(logit_val[idx_tr], Y[idx_tr].float())
                 loss_dp_v  = _soft_dp_from_logits(logit_val, data.sens, idx_tr)
-                loss_eo_v  = _soft_eo_from_logits(logit_val, Y, data.sens, idx_tr)
+                loss_eo_v  = _get_eo_loss(logit_val, Y, data, idx_tr, eo_mode)
                 loss_l1_v  = ed.weights().abs().sum()
                 obj_v = loss_bce_v + (lam_dp * loss_dp_v) + (lam_eo * loss_eo_v) + (lam_l1 * loss_l1_v)
                 val_losses.append(obj_v)
