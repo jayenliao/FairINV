@@ -1,20 +1,20 @@
 set -euo pipefail
 CUDA_VISIBLE_DEVICES=7
 
-echo "Attacking EdgeAdder with GAT backbone for 5 datasets x 10 seeds..."
+echo "Attacking EdgeAdder with gin backbone for 5 datasets x 10 seeds..."
 echo
 
 # Define datasets and their tuned best_overall.json paths
 declare -A best_paths=(
-  [bail]="best_overall_json/vanilla/gat/bail.json"
-  [pokec_z]="best_overall_json/vanilla/gat/pokec_z.json"
-  [pokec_n]="best_overall_json/vanilla/gat/pokec_n.json"
-  [nba]="best_overall_json/vanilla/gat/nba.json"
-  [german]="best_overall_json/vanilla/gat/german.json"
+  [bail]="best_overall_json/vanilla/gin/bail.json"
+  [pokec_z]="best_overall_json/vanilla/gin/pokec_z.json"
+  [pokec_n]="best_overall_json/vanilla/gin/pokec_n.json"
+  [nba]="best_overall_json/vanilla/gin/nba.json"
+  [german]="best_overall_json/vanilla/gin/german.json"
 )
 
 # Common args
-encoder="gat"
+encoder="gin"
 model="edge_adder"
 attack="nifa"
 nifa_mode='degree'
@@ -25,7 +25,7 @@ log_dir="logs/tuned_vanilla/nifa_degree_no-dp_no-eo"
 
 # Loop over datasets
 
-for dataset in nba german bail pokec_z pokec_n; do
+for dataset in pokec_z pokec_n nba german bail; do
     echo
     echo "============ ${dataset^^} ============="
     best_path="${best_paths[$dataset]}"
