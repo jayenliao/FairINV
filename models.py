@@ -5,7 +5,7 @@ from torch.nn.modules.loss import _Loss
 from torch.autograd import grad
 from torch_geometric.nn import GCNConv, GINConv, SAGEConv, GATConv, SGConv
 from torch_sparse import SparseTensor
-from tensorboardX import SummaryWriter
+# from tensorboardX import SummaryWriter
 from logger import EpochLogger
 from utils import get_metrics
 
