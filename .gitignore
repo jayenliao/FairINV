@@ -3,3 +3,6 @@ __pycache__/
 logs*/
 weights*/
 *.pt
+DS_Store
+*/.DS_Store
+*/*/.DS_Store
