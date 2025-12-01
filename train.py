@@ -269,7 +269,7 @@ def run_edge_adder_unified(args, data, seed_dir):
         params += list(ed.parameters())
     optimizer = torch.optim.Adam(params, lr=args.lr, weight_decay=args.weight_decay)
 
-    lam_dp  = float(getattr(args, "lambda_dp", 0.1))
+    lam_dp  = float(getattr(args, "lambda_dp", 0.0))
     lam_eo  = float(getattr(args, "lambda_eo", 0.0))
     eo_mode = getattr(args, "eo_mode", "tpr")
     lam_l1  = float(getattr(args, "lambda_edge_l1", 1e-4))
