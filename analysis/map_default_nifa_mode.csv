@@ -16,9 +16,9 @@ german,gcn,uncertainty,1
 german,gin,degree,1
 german,gin,uncertainty,0
 german,sage,degree,1
-german,sage,uncertainty,1
+german,sage,uncertainty,0
 german,sgc,degree,0
-german,sgc,uncertainty,0
+german,sgc,uncertainty,1
 nba,gat,degree,1
 nba,gat,uncertainty,0
 nba,gcn,degree,0
