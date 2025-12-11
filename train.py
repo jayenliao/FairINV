@@ -139,7 +139,7 @@ def run_fairinv(args, data, pbar):
 
     return auc_test, f1_test, acc_test, dp_test, eo_test
 
-def _soft_dp_from_logits(logits: torch.Tensor, sens: torch.Tensor, idx: torch.Tensor):
+def _soft_dp_from_logits(logits: torch.Tensor, sens: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
     """Soft demographic parity on a subset (no thresholding)."""
     probs = torch.sigmoid(logits)
     s = sens[idx].long()
@@ -422,6 +422,9 @@ def run_vanilla(args, data, seed_dir):
     idx_tr, idx_va, idx_te = data.idx_train, data.idx_val, data.idx_test
     in_dim = X.shape[1]
     out_dim = 1
+    lam_dp  = float(getattr(args, "lambda_dp", 0.0))
+    lam_eo  = float(getattr(args, "lambda_eo", 0.0))
+    eo_mode = getattr(args, "eo_mode", "tpr")
 
     # Build models (backbone + clf)
     backbone = ConstructModel(in_dim, args.hid_dim, args.encoder, args.layer_num).to(device)
@@ -444,8 +447,10 @@ def run_vanilla(args, data, seed_dir):
         H = backbone(X, A_blend)          # [N, hid]
         logits = clf(H).squeeze(1)        # [N]
         loss_bce = loss_fn(logits[idx_tr], Y[idx_tr].float())
-        loss = loss_bce
-        loss_dp, l1 = None, None
+        loss_dp  = _soft_dp_from_logits(logits, data.sens, idx_tr)
+        loss_eo  = _get_eo_loss(logits, Y, data, idx_tr, eo_mode)
+        l1 = None
+        loss = loss_bce + (lam_dp * loss_dp) + (lam_eo * loss_eo)
 
         # --- Train metrics & logging ---
         with torch.no_grad():
@@ -458,6 +463,7 @@ def run_vanilla(args, data, seed_dir):
                 "loss_total": float(loss.item()),
                 "loss_bce": float(loss_bce.item()),
                 "loss_dp": float(loss_dp.item()) if loss_dp is not None else None,
+                "loss_eo": float(loss_eo.item()) if loss_eo is not None else None,
                 "loss_l1": float(l1.item()) if l1 is not None else None,
                 # metrics (train)
                 "auc": auc_tr,
@@ -478,7 +484,8 @@ def run_vanilla(args, data, seed_dir):
             H_val = backbone(X, A_blend)
             logit_val = clf(H_val).squeeze(1)
             loss_bce_val = loss_fn(logit_val[idx_va], Y[idx_va].float())
-            loss_dp_val = None
+            loss_dp_val = _soft_dp_from_logits(logit_val, data.sens, idx_va) if lam_dp > 0.0 else None
+            loss_eo_val = _get_eo_loss(logit_val, Y, data, idx_va, eo_mode) if lam_eo > 0.0 else None
             l1_val = None
             loss_val_total = loss_bce_val
 
@@ -487,7 +494,7 @@ def run_vanilla(args, data, seed_dir):
             Y, logit_val, pred=pred_val, idx=idx_va, data=data, neg=False
         )
 
-        score = (auc + f1) / 2 #- dp - eo
+        score = (auc + f1) / 2 - dp - eo
         if score > best['score']:
             best['score'] = score
             best['state'] = {
@@ -500,6 +507,7 @@ def run_vanilla(args, data, seed_dir):
             'loss_total': float(loss_val_total.item()),
             'loss_bce': float(loss_bce_val.item()),
             'loss_dp': float(loss_dp_val.item()) if loss_dp_val is not None else None,
+            'loss_eo': float(loss_eo_val.item()) if loss_eo_val is not None else None,
             'loss_l1': float(l1_val.item()) if l1_val is not None and torch.is_tensor(l1_val) else (float(l1_val) if l1_val is not None else None),
             # metrics (val)
             'auc': auc,

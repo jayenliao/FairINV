@@ -36,11 +36,11 @@ def get_parser():
                         help='the number for partitioning the sensitive attribute group.')
     parser.add_argument('--use_neg_metrics', action='store_true',
                         help='Whether to use negative sampling for computing fairness metrics.')
+    parser.add_argument('--lambda_dp', type=float, default=0.0, help='Weight for soft demographic parity loss.')
+    parser.add_argument('--lambda_eo', type=float, default=0.0, help='Weight for soft equal opportunity loss.')
 
     # edge adder specific
     parser.add_argument('--edge_k', type=int, default=2, help='#candidate pairs per node.')
-    parser.add_argument('--lambda_dp', type=float, default=0.1, help='Weight for soft demographic parity loss.')
-    parser.add_argument('--lambda_eo', type=float, default=0.0, help='Weight for soft equal opportunity loss.')
     parser.add_argument('--eo_mode', type=str, choices=['tpr','fpr','both'], default='tpr',
                         help='Mode for equal opportunity loss.')
     parser.add_argument('--lambda_edge_l1', type=float, default=1e-4, help='L1 sparsity on learnable edges.')

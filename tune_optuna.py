@@ -305,8 +305,13 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
             hp["hid_dim"] = trial.suggest_categorical("hid_dim", [16, 32, 64])
         else:  # LARGE
             hp["lr"] = trial.suggest_float("lr", 1e-4, 5e-2, log=True)
-        hp["weight_decay"] = trial.suggest_float("weight_decay", 1e-6, 3e-3, log=True)
-        hp["hid_dim"] = trial.suggest_categorical("hid_dim", [32, 64, 128])
+            hp["weight_decay"] = trial.suggest_float("weight_decay", 1e-6, 3e-3, log=True)
+            hp["hid_dim"] = trial.suggest_categorical("hid_dim", [32, 64, 128])
+
+        use_zero_dp = trial.suggest_categorical("use_zero_dp", [True, False])
+        use_zero_eo = False if use_zero_dp else trial.suggest_categorical("use_zero_eo", [True, False])
+        hp["lambda_dp"] = 0.0 if use_zero_dp else trial.suggest_float("lambda_dp", 1e-4, 100.0, log=True)
+        hp["lambda_eo"] = 0.0 if use_zero_eo else trial.suggest_float("lambda_eo", 1e-4, 100.0, log=True)
 
     hp["dropout"] = trial.suggest_float("dropout", 0.0, 0.7)
     # layer_num: used by GCN/GAT; SGC ignores beyond 1; GIN/SAGE custom modules ignore layer_num internally.
@@ -341,10 +346,6 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
         else:
             hp["edge_k"] = trial.suggest_int("edge_k", 1, 3)
         hp["lambda_edge_l1"] = trial.suggest_float("lambda_edge_l1", 1e-5, 1e-2, log=True)
-        use_zero_dp = trial.suggest_categorical("use_zero_dp", [True, False])
-        use_zero_eo = False if use_zero_dp else trial.suggest_categorical("use_zero_eo", [True, False])
-        hp["lambda_dp"] = 0.0 if use_zero_dp else trial.suggest_float("lambda_dp", 1e-4, 100.0, log=True)
-        hp["lambda_eo"] = 0.0 if use_zero_eo else trial.suggest_float("lambda_eo", 1e-4, 100.0, log=True)
 
     return hp
 
