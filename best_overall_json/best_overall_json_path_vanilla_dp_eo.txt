@@ -1,0 +1,34 @@
+===== Backbone: GCN =====
+logs/tune_vanilla_dp_eo/no_attack/bail/gcn/vanilla/auc_f1_mean_minus_std/20251210-222019_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/pokec_z/gcn/vanilla/auc_f1_mean_minus_std/20251211-061423_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/pokec_n/gcn/vanilla/auc_f1_mean_minus_std/20251211-124559_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/nba/gcn/vanilla/auc_f1_mean_minus_std/20251211-210500_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/german/gcn/vanilla/auc_f1_mean_minus_std/20251212-013140_vanilla-dp-eo-no-attack/best_overall.json
+
+===== Backbone: GAT =====
+logs/tune_vanilla_dp_eo/no_attack/bail/gat/vanilla/auc_f1_mean_minus_std/20251210-221915_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/pokec_z/gat/vanilla/auc_f1_mean_minus_std/20251211-051457_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/pokec_n/gat/vanilla/auc_f1_mean_minus_std/20251211-124528_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/nba/gat/vanilla/auc_f1_mean_minus_std/20251211-215758_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/german/gat/vanilla/auc_f1_mean_minus_std/20251211-235142_vanilla-dp-eo-no-attack/best_overall.json
+
+===== Backbone: GIN =====
+logs/tune_vanilla_dp_eo/no_attack/bail/gin/vanilla/auc_f1_mean_minus_std/20251210-222110_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/pokec_z/gin/vanilla/auc_f1_mean_minus_std/20251211-033802_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/pokec_n/gin/vanilla/auc_f1_mean_minus_std/20251211-124618_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/nba/gin/vanilla/auc_f1_mean_minus_std/20251211-181147_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/german/gin/vanilla/auc_f1_mean_minus_std/20251211-212903_vanilla-dp-eo-no-attack/best_overall.json
+
+===== Backbone: SAGE =====
+logs/tune_vanilla_dp_eo/no_attack/bail/sage/vanilla/auc_f1_mean_minus_std/20251210-222407_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/pokec_z/sage/vanilla/auc_f1_mean_minus_std/20251211-035212_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/pokec_n/sage/vanilla/auc_f1_mean_minus_std/20251211-124704_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/nba/sage/vanilla/auc_f1_mean_minus_std/20251211-181049_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/german/sage/vanilla/auc_f1_mean_minus_std/20251211-214300_vanilla-dp-eo-no-attack/best_overall.json
+
+===== Backbone: SGC =====
+logs/tune_vanilla_dp_eo/no_attack/bail/sgc/vanilla/auc_f1_mean_minus_std/20251210-222453_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/pokec_z/sgc/vanilla/auc_f1_mean_minus_std/20251211-062105_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/pokec_n/sgc/vanilla/auc_f1_mean_minus_std/20251211-124730_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/nba/sgc/vanilla/auc_f1_mean_minus_std/20251211-194413_vanilla-dp-eo-no-attack/best_overall.json
+logs/tune_vanilla_dp_eo/no_attack/german/sgc/vanilla/auc_f1_mean_minus_std/20251212-001223_vanilla-dp-eo-no-attack/best_overall.json

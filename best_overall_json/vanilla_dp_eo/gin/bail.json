@@ -1,0 +1,33 @@
+{
+  "number": 43,
+  "value": 0.8076901906568396,
+  "params": {
+    "lr": 0.0017982076327360563,
+    "weight_decay": 0.0008772081253380367,
+    "hid_dim": 64,
+    "use_zero_dp": true,
+    "lambda_eo": 0.0010011611503133399,
+    "dropout": 0.5087293947339288
+  },
+  "user_attrs": {
+    "hparams": {
+      "lr": 0.0017982076327360563,
+      "weight_decay": 0.0008772081253380367,
+      "hid_dim": 64,
+      "lambda_dp": 0.0,
+      "lambda_eo": 0.0010011611503133399,
+      "dropout": 0.5087293947339288
+    },
+    "val_mean": 0.6760075575764066,
+    "test_mean": 0.5971567769890854,
+    "val_f1_mean": 0.7795528149771462,
+    "val_f1_std": 0.018343981499933177,
+    "val_auc_mean": 0.8638519444520973,
+    "val_auc_std": 0.0096803966156313,
+    "val_dp_mean": 0.08458222809288261,
+    "val_dp_std": 0.01401584726471362,
+    "val_eo_mean": 0.018963029307856916,
+    "val_eo_std": 0.008395669335050397,
+    "trial_dir": "logs/tune_vanilla_dp_eo/no_attack/bail/gin/vanilla/auc_f1_mean_minus_std/20251210-222110_vanilla-dp-eo-no-attack/trial_0043_56869179"
+  }
+}

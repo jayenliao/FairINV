@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-BASE_DIR="${1:-logs/optuna}"
+BASE_DIR="${1:-logs/tune_vanilla_dp_eo/no_attack}"
 MODEL="${2:-vanilla}"
 
 datasets=(bail pokec_z pokec_n nba german)

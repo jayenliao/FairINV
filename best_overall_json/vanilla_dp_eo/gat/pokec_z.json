@@ -1,0 +1,33 @@
+{
+  "number": 41,
+  "value": 0.770161794772947,
+  "params": {
+    "lr": 0.0009300863934617711,
+    "weight_decay": 0.0014620289547008082,
+    "hid_dim": 128,
+    "use_zero_dp": true,
+    "lambda_eo": 0.11990245701047376,
+    "dropout": 0.27085122301160797
+  },
+  "user_attrs": {
+    "hparams": {
+      "lr": 0.0009300863934617711,
+      "weight_decay": 0.0014620289547008082,
+      "hid_dim": 128,
+      "lambda_dp": 0.0,
+      "lambda_eo": 0.11990245701047376,
+      "dropout": 0.27085122301160797
+    },
+    "val_mean": 0.7418232176194539,
+    "test_mean": 0.6392757888736706,
+    "val_f1_mean": 0.7488946011280546,
+    "val_f1_std": 0.002888356062352147,
+    "val_auc_mean": 0.7957066879575951,
+    "val_auc_std": 0.0013893434774035658,
+    "val_dp_mean": 0.0015679481610671897,
+    "val_dp_std": 0.001050259901806476,
+    "val_eo_mean": 0.005503435347533336,
+    "val_eo_std": 0.00414320939325099,
+    "trial_dir": "logs/tune_vanilla_dp_eo/no_attack/pokec_z/gat/vanilla/auc_f1_mean_minus_std/20251211-051457_vanilla-dp-eo-no-attack/trial_0041_dd4fe70d"
+  }
+}

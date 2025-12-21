@@ -1,0 +1,34 @@
+{
+  "number": 36,
+  "value": 0.8755364464363737,
+  "params": {
+    "lr": 0.0467922374210601,
+    "weight_decay": 0.0007718840547150374,
+    "hid_dim": 16,
+    "use_zero_dp": false,
+    "use_zero_eo": true,
+    "lambda_dp": 0.08177341284509335,
+    "dropout": 0.5746372192478095
+  },
+  "user_attrs": {
+    "hparams": {
+      "lr": 0.0467922374210601,
+      "weight_decay": 0.0007718840547150374,
+      "hid_dim": 16,
+      "lambda_dp": 0.08177341284509335,
+      "lambda_eo": 0.0,
+      "dropout": 0.5746372192478095
+    },
+    "val_mean": 0.8162143612299857,
+    "test_mean": 0.7515804862224289,
+    "val_f1_mean": 0.8453483239140035,
+    "val_f1_std": 0.007374233540071448,
+    "val_auc_mean": 0.918489877492171,
+    "val_auc_std": 0.005391074993355544,
+    "val_dp_mean": 0.01382360254607154,
+    "val_dp_std": 0.012610324731171019,
+    "val_eo_mean": 0.015310360137946333,
+    "val_eo_std": 0.008443044689782804,
+    "trial_dir": "logs/tune_vanilla_dp_eo/no_attack/bail/sage/vanilla/auc_f1_mean_minus_std/20251210-222407_vanilla-dp-eo-no-attack/trial_0036_4be95f41"
+  }
+}
