@@ -3,7 +3,7 @@
 # (with --dry support)
 
 set -Eeuo pipefail
-export CUDA_VISIBLE_DEVICES="3"
+export CUDA_VISIBLE_DEVICES="0"
 
 # ---------- CLI flags ----------
 DRY=${DRY:-0}
@@ -41,7 +41,7 @@ run_cmd() {
 }
 
 # ---------- Defaults (override via env) ----------
-DATASETS=(${DATASETS:-bail pokec_z pokec_n nba german})
+DATASETS=(${DATASETS:-pokec_n nba german})
 MODELS=(${MODELS:-vanilla})
 ENCODERS=(${ENCODERS:-gat})
 ATTACK=${ATTACK:-none}
