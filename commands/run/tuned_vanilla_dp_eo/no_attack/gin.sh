@@ -1,0 +1,49 @@
+#!/bin/bash
+# gin.sh
+set -euo pipefail
+
+CUDA_VISIBLE_DEVICES=1
+
+echo "Running vanilla gin with DP and EO loss terms for 5 datasets x 10 seeds..."
+echo
+
+# Define datasets and their tuned best_overall.json paths
+declare -A best_paths=(
+  [bail]="best_overall_json/vanilla_dp_eo/gin/bail.json"
+  [pokec_z]="best_overall_json/vanilla_dp_eo/gin/pokec_z.json"
+  [pokec_n]="best_overall_json/vanilla_dp_eo/gin/pokec_n.json"
+  [nba]="best_overall_json/vanilla_dp_eo/gin/nba.json"
+  [german]="best_overall_json/vanilla_dp_eo/gin/german.json"
+)
+
+# Common args
+encoder="gin"
+model="vanilla"
+epochs=1000
+start_seed=0
+seed_num=10
+log_dir="logs/tuned_vanilla_dp_eo/no_attack"
+
+for dataset in bail pokec_z pokec_n nba german; do
+    echo
+    echo "============ ${dataset^^} ============="
+    best_path="${best_paths[$dataset]}"
+    if [[ ! -f "$best_path" ]]; then
+        echo "⚠️  Warning: best_overall.json not found for $dataset at $best_path"
+    fi
+
+    CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES python train.py \
+        --model "$model" \
+        --encoder "$encoder" \
+        --dataset "$dataset" \
+        --start_seed "$start_seed" \
+        --seed_num "$seed_num" \
+        --epochs "$epochs" \
+        --best_overall_path "$best_path" \
+        --log_dir "$log_dir" \
+        --attack none
+done
+
+
+echo
+echo "✅ All runs finished."
