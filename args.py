@@ -44,6 +44,19 @@ def get_parser():
     parser.add_argument('--eo_mode', type=str, choices=['tpr','fpr','both'], default='tpr',
                         help='Mode for equal opportunity loss.')
     parser.add_argument('--lambda_edge_l1', type=float, default=1e-4, help='L1 sparsity on learnable edges.')
+    # edge adder pipeline variants
+    parser.add_argument('--edge_pipeline', type=str, choices=['joint','freeze_gnn_then_edge'], default='joint',
+                        help="EdgeAdder training pipeline: 'joint' or 'freeze_gnn_then_edge'.")
+    parser.add_argument('--pretrain_epochs', type=int, default=0,
+                        help='Stage-1 epochs (GNN pretrain). 0 => use --epochs.')
+    parser.add_argument('--edge_epochs', type=int, default=0,
+                        help='Stage-3 epochs (EdgeAdder training). 0 => use --epochs.')
+    parser.add_argument('--pretrain_lambda_dp', type=float, default=None,
+                        help='Override lambda_dp during stage-1 pretraining. Default=None uses --lambda_dp.')
+    parser.add_argument('--pretrain_lambda_eo', type=float, default=None,
+                        help='Override lambda_eo during stage-1 pretraining. Default=None uses --lambda_eo.')
+    parser.add_argument('--edge_cand_source', type=str, choices=['feat','emb'], default=None,
+                        help="Candidate feature: 'feat' (raw) or 'emb' (pretrained). Default: joint->feat, freeze->emb.")
     parser.add_argument('--adv_reduce_exclude_l1', action='store_true',
                         help='When picking the worst policy, exclude L1 from the per-policy objective.')
     parser.add_argument('--scale_lambda', type=int, default=2,

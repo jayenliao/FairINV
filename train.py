@@ -238,6 +238,275 @@ def run_edge_adder_unified(args, data, seed_dir):
     # backbone + head
     backbone = ConstructModel(in_dim, args.hid_dim, args.encoder, args.layer_num).to(device)
     clf = torch.nn.Linear(args.hid_dim, out_dim).to(device)
+    # Optional 2-stage pipeline:
+    #   (1) pretrain GNN on base graph without edge-weight L1 (and without learnable edges)
+    #   (2) freeze GNN parameters
+    #   (3) build cross-group candidates and train EdgeAdder only with edge-weight L1
+    edge_pipeline = getattr(args, "edge_pipeline", "joint")
+    if edge_pipeline == "freeze_gnn_then_edge":
+        lam_dp_full = float(getattr(args, "lambda_dp", 0.0))
+        lam_eo_full = float(getattr(args, "lambda_eo", 0.0))
+        eo_mode = getattr(args, "eo_mode", "tpr")
+        lam_l1 = float(getattr(args, "lambda_edge_l1", 1e-4))
+        reduce_method = getattr(args, "max_reduce", "max")
+        lse_tau = float(getattr(args, "lse_tau", 0.5))
+
+        pre_epochs = int(getattr(args, "pretrain_epochs", 0) or args.epochs)
+        edge_epochs = int(getattr(args, "edge_epochs", 0) or args.epochs)
+
+        # stage-1 fairness coefficients (can override for pretraining)
+        lam_dp_pre = getattr(args, "pretrain_lambda_dp", None)
+        lam_eo_pre = getattr(args, "pretrain_lambda_eo", None)
+        lam_dp_pre = lam_dp_full if lam_dp_pre is None else float(lam_dp_pre)
+        lam_eo_pre = lam_eo_full if lam_eo_pre is None else float(lam_eo_pre)
+
+        # Setup common tensors
+        X = data.features
+        Y = data.labels
+        EI = data.edge_index   # SparseTensor
+        idx_tr, idx_va, idx_te = data.idx_train, data.idx_val, data.idx_test
+
+        # ---------------- Stage 1: pretrain GNN on base graph ---------------- #
+        opt_pre = torch.optim.Adam(
+            list(backbone.parameters()) + list(clf.parameters()),
+            lr=args.lr,
+            weight_decay=args.weight_decay
+        )
+        best_pre = {'score': -1e9, 'state': None}
+        elog = EpochLogger(seed_dir, model=("edge_minmax" if (args.model == "edge_minmax") else "edge_adder"))
+
+        pbar1 = tqdm(range(pre_epochs), desc=f"[stage1-pretrain] seed={seed}", unit="epoch",
+                     bar_format="{l_bar}{bar:30}{r_bar}")
+        for ep in pbar1:
+            backbone.train()
+            clf.train()
+            opt_pre.zero_grad()
+
+            H = backbone(X, EI)
+            logit = clf(H).squeeze(1)
+
+            loss_bce = F.binary_cross_entropy_with_logits(logit[idx_tr], Y[idx_tr].float())
+            loss_dp = _soft_dp_from_logits(logit, data.sens, idx_tr) if lam_dp_pre > 0.0 else None
+            loss_eo = _get_eo_loss(logit, Y, data, idx_tr, eo_mode) if lam_eo_pre > 0.0 else None
+
+            loss = loss_bce
+            if loss_dp is not None:
+                loss = loss + (lam_dp_pre * loss_dp)
+            if loss_eo is not None:
+                loss = loss + (lam_eo_pre * loss_eo)
+
+            loss.backward()
+            opt_pre.step()
+
+            # log (pretrain_train): just losses
+            elog.log(ep, "pretrain_train", {
+                "loss_total": float(loss.item()),
+                "loss_bce": float(loss_bce.item()),
+                "loss_dp": float(loss_dp.item()) if loss_dp is not None else None,
+                "loss_eo": float(loss_eo.item()) if loss_eo is not None else None,
+                "loss_l1": None,
+                "policy": None,
+            })
+
+            # validation on base graph
+            backbone.eval()
+            clf.eval()
+            with torch.no_grad():
+                auc, f1, acc, dp, eo = _eval_on_graph(backbone, clf, X, EI, Y, idx_va, data)
+                score = (auc + f1) / 2 - dp - eo
+
+            elog.log(ep, "pretrain_val", {
+                "auc": auc, "f1": f1, "acc": acc, "dp": dp, "eo": eo,
+                "score": score,
+                "policy": None,
+            })
+
+            if score > best_pre['score']:
+                best_pre['score'] = score
+                best_pre['state'] = {
+                    'backbone': backbone.state_dict(),
+                    'clf': clf.state_dict(),
+                }
+
+            if (ep + 1) % max(1, int(getattr(args, "log_interval", 20))) == 0:
+                pbar1.set_postfix(loss=f"{float(loss):.3f}", score=f"{score:.3f}")
+
+        # Restore best pretrained GNN
+        if best_pre['state'] is not None:
+            backbone.load_state_dict(best_pre['state']['backbone'])
+            clf.load_state_dict(best_pre['state']['clf'])
+
+        # ---------------- Stage 2: freeze GNN params ---------------- #
+        for p in backbone.parameters():
+            p.requires_grad_(False)
+        for p in clf.parameters():
+            p.requires_grad_(False)
+        backbone.eval()
+        clf.eval()
+
+        # ---------------- Stage 3: build candidates & train EdgeAdder ---------------- #
+        cand_source = getattr(args, "edge_cand_source", None)
+        if cand_source is None:
+            cand_source = "emb"  # default for this pipeline
+        if cand_source == "emb":
+            with torch.no_grad():
+                feat_for_cand = backbone(X, EI).detach()
+        else:
+            feat_for_cand = X.detach()
+
+        use_minmax = (args.model == "edge_minmax")
+
+        if use_minmax:
+            _pn = getattr(args, "policy_names", "same_largest,cross_smallest,same_smallest,cross_random,same_random")
+            policy_names = [p.strip() for p in str(_pn).split(',') if p.strip()]
+            policies_ij = build_policies(
+                feat_for_cand, data.sens, EI,
+                policy_names=policy_names,
+                k_per_node=int(getattr(args, "edge_k", 2)),
+                seed=seed
+            )
+            policies = {name: EdgeAdder(X.size(0), ij, device=device).to(device) for name, ij in policies_ij.items()}
+        else:
+            cand_ij = make_cross_group_candidates(
+                feat_for_cand, data.sens, EI,
+                k_per_node=int(getattr(args, "edge_k", 2)),
+                device=device
+            )
+            policies = {"baseline": EdgeAdder(X.size(0), cand_ij, device=device).to(device)}
+
+        # optimizer over EdgeAdder params only
+        edge_params = []
+        for ed in policies.values():
+            edge_params += list(ed.parameters())
+        optimizer = torch.optim.Adam(edge_params, lr=args.lr, weight_decay=0.0)
+
+        best = {'score': -1e9, 'state': None}
+        pbar2 = tqdm(range(edge_epochs), desc=f"[stage3-edge] seed={seed}", unit="epoch",
+                     bar_format="{l_bar}{bar:30}{r_bar}")
+
+        epoch_offset = pre_epochs
+
+        for ep2 in pbar2:
+            ep = epoch_offset + ep2  # global epoch index for logging
+            optimizer.zero_grad()
+
+            # per-policy objectives for training (BCE + λ_dp*DP + λ_eo*EO + λ_l1*L1)
+            tr_losses = []
+            perpol_tr = []
+            for name, ed in policies.items():
+                A_tr = _blend(EI, ed)
+                H_tr = backbone(X, A_tr)
+                logit_tr = clf(H_tr).squeeze(1)
+
+                loss_bce = F.binary_cross_entropy_with_logits(logit_tr[idx_tr], Y[idx_tr].float())
+                loss_dp = _soft_dp_from_logits(logit_tr, data.sens, idx_tr) if lam_dp_full > 0.0 else None
+                loss_eo = _get_eo_loss(logit_tr, Y, data, idx_tr, eo_mode) if lam_eo_full > 0.0 else None
+                loss_l1 = ed.weights().abs().sum()
+
+                obj = loss_bce
+                if loss_dp is not None:
+                    obj = obj + (lam_dp_full * loss_dp)
+                if loss_eo is not None:
+                    obj = obj + (lam_eo_full * loss_eo)
+                obj = obj + (lam_l1 * loss_l1)
+
+                tr_losses.append(obj)
+                perpol_tr.append({
+                    "policy": name,
+                    "loss_bce": float(loss_bce.item()),
+                    "loss_dp": float(loss_dp.item()) if loss_dp is not None else 0.0,
+                    "loss_eo": float(loss_eo.item()) if loss_eo is not None else 0.0,
+                    "loss_l1": float(loss_l1.item()),
+                })
+
+            if use_minmax:
+                loss = _reduce_losses(tr_losses, method=reduce_method, tau=lse_tau)
+                worst_tr_idx = int(torch.stack(tr_losses).argmax().item())
+            else:
+                loss = tr_losses[0]
+                worst_tr_idx = 0
+
+            worst_tr = perpol_tr[worst_tr_idx]
+            worst_tr["loss_total"] = float(loss.item())
+            elog.log(ep, "train", worst_tr)
+
+            loss.backward()
+            optimizer.step()
+
+            # Validation on BLENDED graph (edge weights are used at inference for this pipeline)
+            backbone.eval()
+            clf.eval()
+            with torch.no_grad():
+                val_rows = []
+                val_scores = []
+                for name, ed in policies.items():
+                    A_val = _blend(EI, ed)
+                    auc, f1, acc, dp, eo = _eval_on_graph(backbone, clf, X, A_val, Y, idx_va, data)
+                    score = (auc + f1) / 2 - dp - eo
+                    val_rows.append({
+                        "policy": name,
+                        "auc": auc, "f1": f1, "acc": acc, "dp": dp, "eo": eo,
+                        "score": score,
+                    })
+                    val_scores.append(score)
+
+                if use_minmax:
+                    worst_val_idx = int(torch.tensor(val_scores).argmin().item())
+                    robust_score = float(min(val_scores))
+                else:
+                    worst_val_idx = 0
+                    robust_score = float(val_scores[0])
+
+                worst_val = val_rows[worst_val_idx]
+                elog.log(ep, "val", worst_val)
+
+            if robust_score > best['score']:
+                best['score'] = robust_score
+                best['state'] = {
+                    'backbone': backbone.state_dict(),
+                    'clf': clf.state_dict(),
+                    'policies': {n: ed.state_dict() for n, ed in policies.items()}
+                }
+
+            if (ep2 + 1) % max(1, int(getattr(args, "log_interval", 20))) == 0:
+                pbar2.set_postfix(loss=f"{float(loss):.3f}", score=f"{robust_score:.3f}", worst_policy=worst_val.get("policy"))
+
+        # Restore best (including EdgeAdder params)
+        if best['state'] is not None:
+            backbone.load_state_dict(best['state']['backbone'])
+            clf.load_state_dict(best['state']['clf'])
+            for n, ed in policies.items():
+                if n in best['state']['policies']:
+                    ed.load_state_dict(best['state']['policies'][n])
+
+        # Test on BLENDED graph (worst-case over policies if minmax)
+        backbone.eval()
+        clf.eval()
+        with torch.no_grad():
+            test_rows = []
+            test_scores = []
+            for name, ed in policies.items():
+                A_te = _blend(EI, ed)
+                auc_t, f1_t, acc_t, dp_t, eo_t = _eval_on_graph(backbone, clf, X, A_te, Y, idx_te, data)
+                score_t = (auc_t + f1_t) / 2 - dp_t - eo_t
+                test_rows.append({
+                    "policy": name,
+                    "auc": auc_t, "f1": f1_t, "acc": acc_t, "dp": dp_t, "eo": eo_t,
+                    "score": score_t,
+                })
+                test_scores.append(score_t)
+
+            if use_minmax:
+                worst_test_idx = int(torch.tensor(test_scores).argmin().item())
+            else:
+                worst_test_idx = 0
+            worst_test = test_rows[worst_test_idx]
+
+        elog.log(epoch_offset + edge_epochs, "test", worst_test)
+        elog.close()
+
+        print(f"[TEST seed={seed}] policy={worst_test['policy']}  AUC {worst_test['auc']:.4f}  F1 {worst_test['f1']:.4f}  ACC {worst_test['acc']:.4f}  DP {worst_test['dp']:.4f}  EO {worst_test['eo']:.4f}")
+        return worst_test["auc"], worst_test["f1"], worst_test["acc"], worst_test["dp"], worst_test["eo"]
 
     # Build policies of non-edge pair selection
     use_minmax = args.model == "edge_minmax"
