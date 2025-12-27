@@ -77,6 +77,9 @@ def get_parser():
     parser.add_argument('--attack', choices=['none', 'nifa'], default='none',
                         help="Optional pre-training attack pipeline. 'nifa' = node+edge injection (NIFA).")
 
+    parser.add_argument('--attack_when', choices=['train', 'eval', 'both'], default='train',
+                        help="When to apply the attack: 'train' (poisoning), 'eval' (test-time), or 'both'.")
+
     # --- NIFA hyperparameters (namespaced to avoid conflicts) ---
     parser.add_argument('--nifa_T', type=int, default=20)
     parser.add_argument('--nifa_theta', type=float, default=0.5)

@@ -88,7 +88,7 @@ def make_cross_group_candidates(features: torch.Tensor,
     return pairs
 
 
-def run_fairinv(args, data, pbar):
+def run_fairinv(args, data, pbar=None, clean_snap=None):
     torch.set_printoptions(threshold=float('inf'))
     num_class = 1
     args.in_dim = data.features.shape[1]
@@ -123,13 +123,29 @@ def run_fairinv(args, data, pbar):
         data=data,
         neg=False
     )
-    metrics_test = {
-        'auc': auc_test,
-        'f1': f1_test,
-        'acc': acc_test,
-        'dp': dp_test,
-        'eo': eo_test
-    }
+    # --- Test-time attack (B): evaluate on attacked graph only at eval ---
+    auc_clean, f1_clean, acc_clean, dp_clean, eo_clean = auc_test, f1_test, acc_test, dp_test, eo_test
+    do_attack_eval = (getattr(args, 'attack', 'none') == 'nifa' and
+                     getattr(args, 'attack_when', 'train') in ('eval','both') and
+                     clean_snap is not None)
+    if do_attack_eval:
+        data_att = restore_from_snapshot(clean_snap, args.device)
+        data_att = apply_nifa_attack(args, data_att)
+        with torch.no_grad():
+            output_att = fairinv(data_att.features, data_att.edge_index)
+        pred_att = (output_att.squeeze() > 0).long()
+        auc_test, f1_test, acc_test, dp_test, eo_test = get_metrics(
+            data_att.labels, output_att, pred=pred_att, idx=data_att.idx_test, data=data_att, neg=False
+        )
+        metrics_test = {
+            'auc': auc_test, 'f1': f1_test, 'acc': acc_test, 'dp': dp_test, 'eo': eo_test,
+            'auc_clean': auc_clean, 'f1_clean': f1_clean, 'acc_clean': acc_clean,
+            'dp_clean': dp_clean, 'eo_clean': eo_clean
+        }
+    else:
+        metrics_test = {
+            'auc': auc_clean, 'f1': f1_clean, 'acc': acc_clean, 'dp': dp_clean, 'eo': eo_clean
+        }
     print("[TEST]", end=' ')
     for m, v in metrics_test.items():
         print(f"{m.upper():3}: {v:.4f}", end='  ')
@@ -200,9 +216,26 @@ def _get_eo_loss(logits, Y, data, idx_tr, eo_mode):
         raise ValueError(f"Unknown eo_mode: {eo_mode}")
     return loss_eo
 
-def _blend(A_base: SparseTensor, edge_adder: EdgeAdder | None):
-    """Return blended SparseTensor A = A_base (+ soft edges if provided)."""
-    return (A_base + edge_adder.sparse_tensor()).coalesce() if edge_adder is not None else A_base
+def _blend(A_base: SparseTensor, edge_adder: EdgeAdder | None, num_nodes: int | None = None):
+    """Return blended SparseTensor A = A_base (+ soft edges if provided).
+
+    If num_nodes is provided (e.g., under test-time NIFA where the graph gains injected
+    nodes), we will pad the EdgeAdder sparse tensor to (num_nodes, num_nodes) so
+    that A_base and A_soft are shape-compatible.
+"""
+    if edge_adder is None:
+        return A_base
+    if num_nodes is None or num_nodes == edge_adder.N:
+        return (A_base + edge_adder.sparse_tensor()).coalesce()
+    # Build a padded SparseTensor for soft edges with larger graph size
+    i = edge_adder.cij[0]
+    j = edge_adder.cij[1]
+    w = edge_adder.weights()
+    row = torch.cat([i, j], dim=0)
+    col = torch.cat([j, i], dim=0)
+    val = torch.cat([w, w], dim=0)
+    A_soft = SparseTensor(row=row, col=col, value=val, sparse_sizes=(num_nodes, num_nodes)).coalesce()
+    return (A_base + A_soft).coalesce()
 
 def _reduce_losses(loss_list: list[torch.Tensor], method: str = "max", tau: float = 0.5):
     """Hard max or smooth max (log-sum-exp)."""
@@ -221,7 +254,7 @@ def _eval_on_graph(backbone, clf, X, A, Y, idx, data):
     return get_metrics(Y, logits, pred=pred, idx=idx, data=data, neg=False)
 
 
-def run_edge_adder_unified(args, data, seed_dir):
+def run_edge_adder_unified(args, data, seed_dir, clean_snap=None):
     """
     Unified trainer for:
       - Baseline edge-adder (single policy using make_cross_group_candidates)
@@ -313,7 +346,7 @@ def run_edge_adder_unified(args, data, seed_dir):
             clf.eval()
             with torch.no_grad():
                 auc, f1, acc, dp, eo = _eval_on_graph(backbone, clf, X, EI, Y, idx_va, data)
-                score = (auc + f1) / 2 - dp - eo
+                score = (auc + f1) / 2 # - dp - eo
 
             elog.log(ep, "pretrain_val", {
                 "auc": auc, "f1": f1, "acc": acc, "dp": dp, "eo": eo,
@@ -394,7 +427,7 @@ def run_edge_adder_unified(args, data, seed_dir):
             tr_losses = []
             perpol_tr = []
             for name, ed in policies.items():
-                A_tr = _blend(EI, ed)
+                A_tr = _blend(EI, ed, num_nodes=X.size(0))
                 H_tr = backbone(X, A_tr)
                 logit_tr = clf(H_tr).squeeze(1)
 
@@ -440,7 +473,7 @@ def run_edge_adder_unified(args, data, seed_dir):
                 val_rows = []
                 val_scores = []
                 for name, ed in policies.items():
-                    A_val = _blend(EI, ed)
+                    A_val = _blend(EI, ed, num_nodes=X.size(0))
                     auc, f1, acc, dp, eo = _eval_on_graph(backbone, clf, X, A_val, Y, idx_va, data)
                     score = (auc + f1) / 2 - dp - eo
                     val_rows.append({
@@ -486,7 +519,7 @@ def run_edge_adder_unified(args, data, seed_dir):
             test_rows = []
             test_scores = []
             for name, ed in policies.items():
-                A_te = _blend(EI, ed)
+                A_te = _blend(EI, ed, num_nodes=X.size(0))
                 auc_t, f1_t, acc_t, dp_t, eo_t = _eval_on_graph(backbone, clf, X, A_te, Y, idx_te, data)
                 score_t = (auc_t + f1_t) / 2 - dp_t - eo_t
                 test_rows.append({
@@ -501,6 +534,36 @@ def run_edge_adder_unified(args, data, seed_dir):
             else:
                 worst_test_idx = 0
             worst_test = test_rows[worst_test_idx]
+
+            # --- Test-time attack (B): evaluate on attacked graph only at eval ---
+            clean_test = dict(worst_test)
+            do_attack_eval = (getattr(args, 'attack', 'none') == 'nifa' and
+                             getattr(args, 'attack_when', 'train') in ('eval','both') and
+                             clean_snap is not None)
+            if do_attack_eval:
+                data_att = restore_from_snapshot(clean_snap, args.device)
+                data_att = apply_nifa_attack(args, data_att)
+                Xa, Ya, EIa = data_att.features, data_att.labels, data_att.edge_index
+                idx_te_a = data_att.idx_test
+                test_rows_att = []
+                test_scores_att = []
+                for name, ed in policies.items():
+                    A_te_a = _blend(EIa, ed, num_nodes=Xa.size(0))
+                    auc_a, f1_a, acc_a, dp_a, eo_a = _eval_on_graph(backbone, clf, Xa, A_te_a, Ya, idx_te_a, data_att)
+                    score_a = (auc_a + f1_a) / 2 - dp_a - eo_a
+                    test_rows_att.append({'policy': name, 'auc': auc_a, 'f1': f1_a, 'acc': acc_a, 'dp': dp_a, 'eo': eo_a, 'score': score_a})
+                    test_scores_att.append(score_a)
+                if use_minmax:
+                    worst_att_idx = int(torch.tensor(test_scores_att).argmin().item())
+                else:
+                    worst_att_idx = 0
+                worst_test = test_rows_att[worst_att_idx]
+                worst_test.update({
+                    'policy_clean': clean_test.get('policy'),
+                    'auc_clean': clean_test.get('auc'), 'f1_clean': clean_test.get('f1'), 'acc_clean': clean_test.get('acc'),
+                    'dp_clean': clean_test.get('dp'), 'eo_clean': clean_test.get('eo'),
+                    'score_clean': clean_test.get('score'),
+                })
 
         elog.log(epoch_offset + edge_epochs, "test", worst_test)
         elog.close()
@@ -564,7 +627,7 @@ def run_edge_adder_unified(args, data, seed_dir):
             loss_list = []          # total objective per policy (for backprop reduce)
             train_perpol = []       # store components for logging (no grad used for logging)
             for name, ed in policies.items():
-                A_blend = _blend(EI, ed)
+                A_blend = _blend(EI, ed, num_nodes=X.size(0))
                 H = backbone(X, A_blend)
                 logits = clf(H).squeeze(1)
                 loss_bce = F.binary_cross_entropy_with_logits(logits[idx_tr], Y[idx_tr].float())
@@ -618,7 +681,7 @@ def run_edge_adder_unified(args, data, seed_dir):
             perpol_val = []   # components + metrics per policy (for logging & selection)
 
             for name, ed in policies.items():
-                A_val = _blend(EI, ed)
+                A_val = _blend(EI, ed, num_nodes=X.size(0))
                 H_val = backbone(X, A_val)
                 logit_val = clf(H_val).squeeze(1)
                 loss_bce_v = F.binary_cross_entropy_with_logits(logit_val[idx_tr], Y[idx_tr].float())
@@ -647,7 +710,7 @@ def run_edge_adder_unified(args, data, seed_dir):
         score = (auc + f1) / 2 - dp - eo
         if score > best['score']:
             best['score'] = score
-            best['state'] = {'backbone': backbone.state_dict(), 'clf': clf.state_dict()}
+            best['state'] = {'backbone': backbone.state_dict(), 'clf': clf.state_dict(), 'policies': {n: ed.state_dict() for n, ed in policies.items()}}
 
         if (ep+1) % args.log_interval == 0:
             pbar.set_postfix(
@@ -665,11 +728,61 @@ def run_edge_adder_unified(args, data, seed_dir):
     if best['state'] is not None:
         backbone.load_state_dict(best['state']['backbone'])
         clf.load_state_dict(best['state']['clf'])
+        if 'policies' in best['state']:
+            for n, ed in policies.items():
+                if n in best['state']['policies']:
+                    ed.load_state_dict(best['state']['policies'][n])
 
     backbone.eval()
     clf.eval()
     with torch.no_grad():
-        auc_t, f1_t, acc_t, dp_t, eo_t = _eval_on_graph(backbone, clf, X, EI, Y, idx_te, data)
+        # evaluate on BLENDED graph (worst-case over policies if minmax)
+        test_rows = []
+        test_scores = []
+        for name, ed in policies.items():
+            A_te = _blend(EI, ed, num_nodes=X.size(0))
+            auc_t, f1_t, acc_t, dp_t, eo_t = _eval_on_graph(backbone, clf, X, A_te, Y, idx_te, data)
+            score_t = (auc_t + f1_t) / 2 - dp_t - eo_t
+            test_rows.append({'policy': name, 'auc': auc_t, 'f1': f1_t, 'acc': acc_t, 'dp': dp_t, 'eo': eo_t, 'score': score_t})
+            test_scores.append(score_t)
+        if use_minmax:
+            worst_idx = int(torch.tensor(test_scores).argmin().item())
+        else:
+            worst_idx = 0
+        worst_test = test_rows[worst_idx]
+
+        # --- Test-time attack (B): evaluate on attacked graph only at eval ---
+        clean_test = dict(worst_test)
+        do_attack_eval = (getattr(args, 'attack', 'none') == 'nifa' and
+                         getattr(args, 'attack_when', 'train') in ('eval','both') and
+                         clean_snap is not None)
+        if do_attack_eval:
+            data_att = restore_from_snapshot(clean_snap, args.device)
+            data_att = apply_nifa_attack(args, data_att)
+            Xa, Ya, EIa = data_att.features, data_att.labels, data_att.edge_index
+            idx_te_a = data_att.idx_test
+            test_rows_att = []
+            test_scores_att = []
+            for name, ed in policies.items():
+                A_te_a = _blend(EIa, ed, num_nodes=Xa.size(0))
+                auc_a, f1_a, acc_a, dp_a, eo_a = _eval_on_graph(backbone, clf, Xa, A_te_a, Ya, idx_te_a, data_att)
+                score_a = (auc_a + f1_a) / 2 - dp_a - eo_a
+                test_rows_att.append({'policy': name, 'auc': auc_a, 'f1': f1_a, 'acc': acc_a, 'dp': dp_a, 'eo': eo_a, 'score': score_a})
+                test_scores_att.append(score_a)
+            if use_minmax:
+                worst_att_idx = int(torch.tensor(test_scores_att).argmin().item())
+            else:
+                worst_att_idx = 0
+            worst_test = test_rows_att[worst_att_idx]
+            worst_test.update({
+                'policy_clean': clean_test.get('policy'),
+                'auc_clean': clean_test.get('auc'), 'f1_clean': clean_test.get('f1'), 'acc_clean': clean_test.get('acc'),
+                'dp_clean': clean_test.get('dp'), 'eo_clean': clean_test.get('eo'),
+                'score_clean': clean_test.get('score'),
+            })
+
+        # overwrite scalar returns with (possibly attacked) worst_test
+        auc_t, f1_t, acc_t, dp_t, eo_t = worst_test['auc'], worst_test['f1'], worst_test['acc'], worst_test['dp'], worst_test['eo']
 
     elog.log(args.epochs, "test", {
         'auc': auc_t, 'f1': f1_t, 'acc': acc_t,
@@ -681,7 +794,7 @@ def run_edge_adder_unified(args, data, seed_dir):
     return auc_t, f1_t, acc_t, dp_t, eo_t
 
 
-def run_vanilla(args, data, seed_dir):
+def run_vanilla(args, data, seed_dir, clean_snap=None):
     # Basic setup
     seed = int(seed_dir.split('seed_')[-1])
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -763,7 +876,7 @@ def run_vanilla(args, data, seed_dir):
             Y, logit_val, pred=pred_val, idx=idx_va, data=data, neg=False
         )
 
-        score = (auc + f1) / 2 - dp - eo
+        score = (auc + f1) / 2
         if score > best['score']:
             best['score'] = score
             best['state'] = {
@@ -805,13 +918,33 @@ def run_vanilla(args, data, seed_dir):
     auc_test, f1_test, acc_test, dp_test, eo_test = get_metrics(
         Y, logit_t, pred=pred_t, idx=idx_te, data=data, neg=False
     )
-    metrics_test = {
-        'auc': auc_test,
-        'f1': f1_test,
-        'acc': acc_test,
-        'dp': dp_test,
-        'eo': eo_test
-    }
+    # --- Test-time attack (B): evaluate on attacked graph only at eval ---
+    auc_clean, f1_clean, acc_clean, dp_clean, eo_clean = auc_test, f1_test, acc_test, dp_test, eo_test
+    do_attack_eval = (getattr(args, 'attack', 'none') == 'nifa' and
+                     getattr(args, 'attack_when', 'train') in ('eval','both') and
+                     clean_snap is not None)
+    if do_attack_eval:
+        data_att = restore_from_snapshot(clean_snap, args.device)
+        data_att = apply_nifa_attack(args, data_att)
+        Xa, Ya, EIa = data_att.features, data_att.labels, data_att.edge_index
+        idx_te_a = data_att.idx_test
+        backbone.eval(); clf.eval()
+        with torch.no_grad():
+            Ha = backbone(Xa, EIa)
+            logit_a = clf(Ha).squeeze(1)
+        pred_a = (logit_a > 0).long()
+        auc_test, f1_test, acc_test, dp_test, eo_test = get_metrics(
+            Ya, logit_a, pred=pred_a, idx=idx_te_a, data=data_att, neg=False
+        )
+        metrics_test = {
+            'auc': auc_test, 'f1': f1_test, 'acc': acc_test, 'dp': dp_test, 'eo': eo_test,
+            'auc_clean': auc_clean, 'f1_clean': f1_clean, 'acc_clean': acc_clean,
+            'dp_clean': dp_clean, 'eo_clean': eo_clean
+        }
+    else:
+        metrics_test = {
+            'auc': auc_clean, 'f1': f1_clean, 'acc': acc_clean, 'dp': dp_clean, 'eo': eo_clean
+        }
     elog.log(args.epochs, "test", metrics_test)
     elog.close()
 
@@ -872,11 +1005,11 @@ def main(args):
 
         data = restore_from_snapshot(clean_snap, args.device)
 
-        if getattr(args, "attack", "none") == "nifa":
+        if getattr(args, "attack", "none") == "nifa" and getattr(args, "attack_when", "train") in ("train", "both"):
             def _A_edges(A: SparseTensor) -> int:
                 r, c, _ = A.coo()
                 return int(r.numel())
-            print("[NIFA] Applying node+edge injection attack before training...")
+            print("[NIFA] Applying node+edge injection attack before training (attack_when=train/both)...")
             tic = time.time()
             N0, E0 = int(data.features.size(0)), _A_edges(data.edge_index)
             print(f"[NIFA pre] N={N0}, E={E0}")
@@ -886,12 +1019,12 @@ def main(args):
             print(f"✓ attack done in {time.time() - tic:.1f}s")
 
         if args.model == "vanilla":
-            auc, f1, acc, dp, eo = run_vanilla(args, data, args.seed_dir)
+            auc, f1, acc, dp, eo = run_vanilla(args, data, args.seed_dir, clean_snap=clean_snap)
         elif args.model == "fairinv":
             pbar = tqdm(total=args.epochs, desc=f"Seed {seed}", unit="epoch", bar_format="{l_bar}{bar:30}{r_bar}")
-            auc, f1, acc, dp, eo = run_fairinv(args, data, pbar)
+            auc, f1, acc, dp, eo = run_fairinv(args, data, pbar, clean_snap=clean_snap)
         elif args.model in ["edge_adder", "edge_minmax"]:
-            auc, f1, acc, dp, eo = run_edge_adder_unified(args, data, args.seed_dir)
+            auc, f1, acc, dp, eo = run_edge_adder_unified(args, data, args.seed_dir, clean_snap=clean_snap)
         else:
             raise ValueError("Invalid mode.")
         results.auc[s, :], results.f1[s, :], results.acc[s, :], \
