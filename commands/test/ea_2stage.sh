@@ -1,0 +1,12 @@
+python train.py \
+  --dataset pokec_z \
+  --model edge_adder \
+  --encoder gcn \
+  --edge_pipeline freeze_gnn_then_edge \
+  --pretrain_epochs 200 \
+  --edge_epochs 200 \
+  --pretrain_lambda_dp 0 --pretrain_lambda_eo 0 \
+  --lambda_dp 0.5 --lambda_eo 0.5 \
+  --lambda_edge_l1 1e-4 \
+  --edge_cand_source emb \
+  --log_dir logs/test/ea_2stage/
