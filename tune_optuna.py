@@ -406,18 +406,18 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
         data_seed = restore_from_snapshot(clean_snap, device)
 
         # apply attack before training
-        if getattr(a, "attack", "none") == "nifa" and getattr(a, "attack_when", "train") in ("train", "both"):
-            print("[tune] Applying NIFA attack before training (attack_when=train/both)…")
+        if getattr(a, "attack", "none") == "nifa":
+            print("[tune] Applying NIFA attack before training…")
             data_seed = apply_nifa_attack(a, data_seed)
 
         # dispatch trainer on (possibly) attacked graph
         if a.model == "fairinv":
             pbar = tqdm(total=args.epochs, desc=f"Seed {seed}", unit="epoch", bar_format="{l_bar}{bar:30}{r_bar}")
-            run_fairinv(a, data_seed, pbar, clean_snap=clean_snap)
+            run_fairinv(a, data_seed, pbar)
         elif a.model in ["edge_adder","edge_minmax"]:
-            run_edge_adder_unified(a, data_seed, a.seed_dir, clean_snap=clean_snap)
+            run_edge_adder_unified(a, data_seed, a.seed_dir)
         else:  # vanilla
-            run_vanilla(a, data_seed, a.seed_dir, clean_snap=clean_snap)
+            run_vanilla(a, data_seed, a.seed_dir)
 
 
     # Summarize

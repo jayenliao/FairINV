@@ -51,6 +51,20 @@ def get_parser():
                         help='Stage-1 epochs (GNN pretrain). 0 => use --epochs.')
     parser.add_argument('--edge_epochs', type=int, default=0,
                         help='Stage-3 epochs (EdgeAdder training). 0 => use --epochs.')
+
+    # alternating (iterative) training for EdgeAdder baseline under freeze_gnn_then_edge
+    # Each round alternates:
+    #   (1) freeze GNN/clf, update edge weights for --alt_edge_epochs
+    #   (2) freeze edges, update GNN/clf on blended graph for --alt_gnn_epochs
+    # Enable by setting --alt_rounds > 0.
+    parser.add_argument('--alt_rounds', type=int, default=0,
+                        help='Number of alternation rounds (0 disables alternating training).')
+    parser.add_argument('--alt_edge_epochs', type=int, default=0,
+                        help='Edge-weight update epochs per round (0 => use --edge_epochs if set, else 20).')
+    parser.add_argument('--alt_gnn_epochs', type=int, default=0,
+                        help='GNN update epochs per round (0 => use --pretrain_epochs if set, else 20).')
+    parser.add_argument('--alt_gnn_lr', type=float, default=None,
+                        help='Learning rate for the GNN update step in alternating training (default: --lr).')
     parser.add_argument('--pretrain_lambda_dp', type=float, default=None,
                         help='Override lambda_dp during stage-1 pretraining. Default=None uses --lambda_dp.')
     parser.add_argument('--pretrain_lambda_eo', type=float, default=None,
@@ -76,9 +90,6 @@ def get_parser():
     # --- Attack toggle ---
     parser.add_argument('--attack', choices=['none', 'nifa'], default='none',
                         help="Optional pre-training attack pipeline. 'nifa' = node+edge injection (NIFA).")
-
-    parser.add_argument('--attack_when', choices=['train', 'eval', 'both'], default='train',
-                        help="When to apply the attack: 'train' (poisoning), 'eval' (test-time), or 'both'.")
 
     # --- NIFA hyperparameters (namespaced to avoid conflicts) ---
     parser.add_argument('--nifa_T', type=int, default=20)
