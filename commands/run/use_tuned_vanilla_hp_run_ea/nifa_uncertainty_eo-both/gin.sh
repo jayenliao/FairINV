@@ -1,5 +1,5 @@
 set -euo pipefail
-CUDA_VISIBLE_DEVICES=1
+CUDA_VISIBLE_DEVICES=7
 
 echo "Attacking EdgeAdder with gin backbone for 5 datasets x 10 seeds..."
 echo
