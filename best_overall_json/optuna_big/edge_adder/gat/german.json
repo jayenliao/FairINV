@@ -1,0 +1,37 @@
+{
+  "number": 31,
+  "value": 0.35077776397078736,
+  "params": {
+    "lr": 0.010188481328150471,
+    "weight_decay": 4.817113927893599e-05,
+    "hid_dim": 16,
+    "use_zero_dp": true,
+    "lambda_eo": 0.3672590796329144,
+    "dropout": 0.19747777353218587,
+    "edge_k": 3,
+    "lambda_edge_l1": 0.0005385866143870793
+  },
+  "user_attrs": {
+    "hparams": {
+      "lr": 0.010188481328150471,
+      "weight_decay": 4.817113927893599e-05,
+      "hid_dim": 16,
+      "lambda_dp": 0.0,
+      "lambda_eo": 0.3672590796329144,
+      "dropout": 0.19747777353218587,
+      "edge_k": 3,
+      "lambda_edge_l1": 0.0005385866143870793
+    },
+    "val_mean": 0.5904919947116264,
+    "test_mean": 0.6147337875312555,
+    "val_f1_mean": 0.7655896161281414,
+    "val_f1_std": 0.17381938690969345,
+    "val_auc_mean": 0.430232380952381,
+    "val_auc_std": 0.04363783234524123,
+    "val_dp_mean": 0.0023762687858997545,
+    "val_dp_std": 0.007128806357699263,
+    "val_eo_mean": 0.005042735042735044,
+    "val_eo_std": 0.015128205128205133,
+    "trial_dir": "logs/optuna_big/german/gat/edge_adder/auc_f1_balanced/20251229-043755_big_clean_gat_20251228_121156_edgeadder/trial_0031_4823996c"
+  }
+}

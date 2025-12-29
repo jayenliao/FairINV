@@ -1,0 +1,37 @@
+{
+  "number": 27,
+  "value": 0.6481058829060896,
+  "params": {
+    "lr": 0.00017298223341566927,
+    "weight_decay": 6.580246038481589e-05,
+    "hid_dim": 32,
+    "use_zero_dp": true,
+    "lambda_eo": 96.87707061177568,
+    "dropout": 0.5329183687508564,
+    "edge_k": 2,
+    "lambda_edge_l1": 0.0004901136227396566
+  },
+  "user_attrs": {
+    "hparams": {
+      "lr": 0.00017298223341566927,
+      "weight_decay": 6.580246038481589e-05,
+      "hid_dim": 32,
+      "lambda_dp": 0.0,
+      "lambda_eo": 96.87707061177568,
+      "dropout": 0.5329183687508564,
+      "edge_k": 2,
+      "lambda_edge_l1": 0.0004901136227396566
+    },
+    "val_mean": 0.677956761962683,
+    "test_mean": 0.6308545273713957,
+    "val_f1_mean": 0.699470869074954,
+    "val_f1_std": 0.005131891076589972,
+    "val_auc_mean": 0.7529787324276084,
+    "val_auc_std": 0.006930522311664077,
+    "val_dp_mean": 0.0164379745531889,
+    "val_dp_std": 0.00827700404342457,
+    "val_eo_mean": 0.03183006423540944,
+    "val_eo_std": 0.009511461624914756,
+    "trial_dir": "logs/optuna_big/pokec_z/gin/edge_adder/auc_f1_balanced/20251228-133230_big_clean_gin_20251228_121244_edgeadder/trial_0027_c9c2b8fb"
+  }
+}

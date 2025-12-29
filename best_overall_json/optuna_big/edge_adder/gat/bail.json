@@ -1,0 +1,39 @@
+{
+  "number": 6,
+  "value": 0.7717289949820215,
+  "params": {
+    "lr": 0.0077461047764892125,
+    "weight_decay": 4.1519731517226574e-05,
+    "hid_dim": 64,
+    "use_zero_dp": false,
+    "use_zero_eo": false,
+    "lambda_dp": 0.0005632743872195332,
+    "lambda_eo": 0.47758996495309874,
+    "dropout": 0.40024867298262656,
+    "edge_k": 2,
+    "lambda_edge_l1": 0.0027080443455572054
+  },
+  "user_attrs": {
+    "hparams": {
+      "lr": 0.0077461047764892125,
+      "weight_decay": 4.1519731517226574e-05,
+      "hid_dim": 64,
+      "lambda_dp": 0.0005632743872195332,
+      "lambda_eo": 0.47758996495309874,
+      "dropout": 0.40024867298262656,
+      "edge_k": 2,
+      "lambda_edge_l1": 0.0027080443455572054
+    },
+    "val_mean": 0.7968262452285153,
+    "test_mean": 0.7758274446718151,
+    "val_f1_mean": 0.8599773435586557,
+    "val_f1_std": 0.007726390702329235,
+    "val_auc_mean": 0.9353938992509329,
+    "val_auc_std": 0.005445078403818896,
+    "val_dp_mean": 0.07483788808582534,
+    "val_dp_std": 0.006384894276681276,
+    "val_eo_mean": 0.026021488090453626,
+    "val_eo_std": 0.005540886863664284,
+    "trial_dir": "logs/optuna_big/bail/gat/edge_adder/auc_f1_balanced/20251229-020917_big_clean_gat_20251228_121156_edgeadder/trial_0006_32218129"
+  }
+}

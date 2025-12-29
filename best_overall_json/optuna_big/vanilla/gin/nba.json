@@ -1,0 +1,31 @@
+{
+  "number": 24,
+  "value": 0.7578388698978157,
+  "params": {
+    "lr": 0.0381397720513228,
+    "weight_decay": 2.8636254666612573e-06,
+    "hid_dim": 64,
+    "dropout": 0.06334968694795463
+  },
+  "user_attrs": {
+    "hparams": {
+      "lr": 0.0381397720513228,
+      "weight_decay": 2.8636254666612573e-06,
+      "hid_dim": 64,
+      "lambda_dp": 0.0,
+      "lambda_eo": 0.0,
+      "dropout": 0.06334968694795463
+    },
+    "val_mean": 0.7578388698978157,
+    "test_mean": 0.5508758483288154,
+    "val_f1_mean": 0.7700428191607107,
+    "val_f1_std": 0.019902248988815006,
+    "val_auc_mean": 0.7456349206349207,
+    "val_auc_std": 0.01023830031376578,
+    "val_dp_mean": 0.23981481481481484,
+    "val_dp_std": 0.08447773872560772,
+    "val_eo_mean": 0.08333333333333333,
+    "val_eo_std": 0.10567244989431572,
+    "trial_dir": "logs/optuna_big/nba/gin/vanilla/auc_f1/20251228-230049_big_clean_gin_20251228_121244_vanilla/trial_0024_972ff7a8"
+  }
+}

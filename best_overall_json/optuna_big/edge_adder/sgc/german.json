@@ -1,0 +1,39 @@
+{
+  "number": 6,
+  "value": 0.25904477211101373,
+  "params": {
+    "lr": 0.002265390407383132,
+    "weight_decay": 5.973344187527043e-06,
+    "hid_dim": 64,
+    "use_zero_dp": false,
+    "use_zero_eo": false,
+    "lambda_dp": 0.002699656873498999,
+    "lambda_eo": 0.009896183632722556,
+    "dropout": 0.3895548456006197,
+    "edge_k": 3,
+    "lambda_edge_l1": 9.746334453925521e-05
+  },
+  "user_attrs": {
+    "hparams": {
+      "lr": 0.002265390407383132,
+      "weight_decay": 5.973344187527043e-06,
+      "hid_dim": 64,
+      "lambda_dp": 0.002699656873498999,
+      "lambda_eo": 0.009896183632722556,
+      "dropout": 0.3895548456006197,
+      "edge_k": 3,
+      "lambda_edge_l1": 9.746334453925521e-05
+    },
+    "val_mean": 0.6118031702707718,
+    "test_mean": 0.5975983560126183,
+    "val_f1_mean": 0.621433430851152,
+    "val_f1_std": 0.3120848956272228,
+    "val_auc_mean": 0.6233371428571428,
+    "val_auc_std": 0.026935311842194845,
+    "val_dp_mean": 0.00553938154064047,
+    "val_dp_std": 0.004860403408577266,
+    "val_eo_mean": 0.0050427350427350425,
+    "val_eo_std": 0.008877787281763132,
+    "trial_dir": "logs/optuna_big/german/sgc/edge_adder/auc_f1_balanced/20251229-012516_big_clean_sgc_20251228_121333_edgeadder/trial_0006_ffb22fbd"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "number": 24,
+  "value": 0.824581409758587,
+  "params": {
+    "lr": 0.03662988795488364,
+    "weight_decay": 0.0006316784977516073,
+    "hid_dim": 32,
+    "dropout": 0.01155043436046436
+  },
+  "user_attrs": {
+    "hparams": {
+      "lr": 0.03662988795488364,
+      "weight_decay": 0.0006316784977516073,
+      "hid_dim": 32,
+      "lambda_dp": 0.0,
+      "lambda_eo": 0.0,
+      "dropout": 0.01155043436046436
+    },
+    "val_mean": 0.824581409758587,
+    "test_mean": 0.7931950570889776,
+    "val_f1_mean": 0.7872708051786763,
+    "val_f1_std": 0.021800134668265015,
+    "val_auc_mean": 0.8618920143384975,
+    "val_auc_std": 0.012029280207803904,
+    "val_dp_mean": 0.08467630079404834,
+    "val_dp_std": 0.01593241325078921,
+    "val_eo_mean": 0.0368202678547506,
+    "val_eo_std": 0.016421534112586258,
+    "trial_dir": "logs/optuna_big/bail/gin/vanilla/auc_f1/20251228-185538_big_clean_gin_20251228_121244_vanilla/trial_0024_67d1740a"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "number": 10,
+  "value": 0.39859693937287133,
+  "params": {
+    "lr": 0.0005266946880424559,
+    "weight_decay": 7.173719181271217e-05,
+    "hid_dim": 16,
+    "use_zero_dp": true,
+    "lambda_eo": 55.07105770950852,
+    "dropout": 0.16041668930788044,
+    "edge_k": 2,
+    "lambda_edge_l1": 0.004741721389301555
+  },
+  "user_attrs": {
+    "hparams": {
+      "lr": 0.0005266946880424559,
+      "weight_decay": 7.173719181271217e-05,
+      "hid_dim": 16,
+      "lambda_dp": 0.0,
+      "lambda_eo": 55.07105770950852,
+      "dropout": 0.16041668930788044,
+      "edge_k": 2,
+      "lambda_edge_l1": 0.004741721389301555
+    },
+    "val_mean": 0.5666236236587943,
+    "test_mean": 0.514687911235977,
+    "val_f1_mean": 0.6726387817091228,
+    "val_f1_std": 0.04584218103716687,
+    "val_auc_mean": 0.7091269841269842,
+    "val_auc_std": 0.036114744860489996,
+    "val_dp_mean": 0.05092592592592594,
+    "val_dp_std": 0.032736425054932745,
+    "val_eo_mean": 0.07333333333333332,
+    "val_eo_std": 0.05333333333333331,
+    "trial_dir": "logs/optuna_big/nba/gat/edge_adder/auc_f1_balanced/20251229-055920_big_clean_gat_20251228_121156_edgeadder/trial_0010_1f9d6d25"
+  }
+}
