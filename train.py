@@ -200,9 +200,30 @@ def _get_eo_loss(logits, Y, data, idx_tr, eo_mode):
         raise ValueError(f"Unknown eo_mode: {eo_mode}")
     return loss_eo
 
-def _blend(A_base: SparseTensor, edge_adder: EdgeAdder | None):
-    """Return blended SparseTensor A = A_base (+ soft edges if provided)."""
-    return (A_base + edge_adder.sparse_tensor()).coalesce() if edge_adder is not None else A_base
+def _blend(A_base: SparseTensor, edge_adder: EdgeAdder | None, num_nodes: int | None = None):
+    """Return blended SparseTensor A = A_base (+ soft edges if provided).
+
+    NOTE: Under threat model **B** (eval-time node injection), the evaluation graph may
+    have more nodes than the training graph. In that case, EdgeAdder only defines
+    edges over the *original* nodes, so we need to pad its sparse tensor to the
+    larger (num_nodes, num_nodes) shape before adding it to the attacked graph.
+    """
+    if edge_adder is None:
+        return A_base
+
+    # Fast path: same shape as training graph.
+    if num_nodes is None or getattr(edge_adder, "N", None) == num_nodes:
+        return (A_base + edge_adder.sparse_tensor()).coalesce()
+
+    # Pad EdgeAdder edges into a larger sparse matrix.
+    i, j = edge_adder.cij[0], edge_adder.cij[1]
+    w = edge_adder.weights()
+    row = torch.cat([i, j], dim=0)
+    col = torch.cat([j, i], dim=0)
+    val = torch.cat([w, w], dim=0)
+    A_ed = SparseTensor(row=row, col=col, value=val, sparse_sizes=(num_nodes, num_nodes)).coalesce()
+    return (A_base + A_ed).coalesce()
+
 
 def _reduce_losses(loss_list: list[torch.Tensor], method: str = "max", tau: float = 0.5):
     """Hard max or smooth max (log-sum-exp)."""
@@ -233,6 +254,10 @@ def run_edge_adder_unified(args, data, seed_dir):
     seed = int(seed_dir.split('seed_')[-1])
     X, Y, EI = data.features, data.labels, data.edge_index
     idx_tr, idx_va, idx_te = data.idx_train, data.idx_val, data.idx_test
+    attack_when = getattr(args, 'attack_when', 'train')
+    eval_only_attack = (getattr(args, 'attack', 'none') == 'nifa' and attack_when == 'eval')
+    clean_snap = snapshot_clean_data(data) if eval_only_attack else None
+
     in_dim, out_dim = X.size(1), 1
 
     # backbone + head
@@ -534,6 +559,64 @@ def run_edge_adder_unified(args, data, seed_dir):
             if hasattr(pbar2, "close"):
                 pbar2.close()
 
+            # --- Final: restore best and evaluate (supports eval-only attack for threat model B) ---
+            if best.get('state', None) is not None:
+                backbone.load_state_dict(best['state']['backbone'])
+                clf.load_state_dict(best['state']['clf'])
+                for _name, _ed in policies.items():
+                    if _name in best['state'].get('policies', {}):
+                        _ed.load_state_dict(best['state']['policies'][_name])
+
+            backbone.eval()
+            clf.eval()
+            name0 = list(policies.keys())[0]
+            ed0 = policies[name0]
+            A_te = _blend(EI, ed0, num_nodes=int(X.size(0)))
+            auc_c, f1_c, acc_c, dp_c, eo_c = _eval_on_graph(backbone, clf, X, A_te, Y, idx_te, data)
+            row_clean = {
+                'policy': name0,
+                'phase': 'final',
+                'round': int(alt_rounds),
+                'auc': auc_c,
+                'f1': f1_c,
+                'acc': acc_c,
+                'dp': dp_c,
+                'eo': eo_c,
+                'score': (auc_c + f1_c) / 2 - dp_c - eo_c,
+            }
+
+            if eval_only_attack:
+                # Primary 'test' split is attacked-graph evaluation; keep clean result in 'test_clean'.
+                elog.log(global_ep, 'test_clean', row_clean)
+                data_att = restore_from_snapshot(clean_snap, device)
+                data_att = apply_nifa_attack(args, data_att)
+                Xa, Ya, EIa = data_att.features, data_att.labels, data_att.edge_index
+                idx_te_a = data_att.idx_test
+                A_te_a = _blend(EIa, ed0, num_nodes=int(Xa.size(0)))
+                auc_a, f1_a, acc_a, dp_a, eo_a = _eval_on_graph(backbone, clf, Xa, A_te_a, Ya, idx_te_a, data_att)
+                row_attack = {
+                    'policy': name0,
+                    'phase': 'final',
+                    'round': int(alt_rounds),
+                    'attack': 'nifa',
+                    'auc': auc_a,
+                    'f1': f1_a,
+                    'acc': acc_a,
+                    'dp': dp_a,
+                    'eo': eo_a,
+                    'score': (auc_a + f1_a) / 2 - dp_a - eo_a,
+                }
+                elog.log(global_ep, 'test', row_attack)
+                elog.close()
+                print(f"[TEST (clean) seed={seed}] AUC={auc_c:.4f} F1={f1_c:.4f} ACC={acc_c:.4f} DP={dp_c:.4f} EO={eo_c:.4f}")
+                print(f"[TEST (eval-attack) seed={seed}] AUC={auc_a:.4f} F1={f1_a:.4f} ACC={acc_a:.4f} DP={dp_a:.4f} EO={eo_a:.4f}")
+                return auc_a, f1_a, acc_a, dp_a, eo_a
+            else:
+                elog.log(global_ep, 'test', row_clean)
+                elog.close()
+                print(f"[TEST seed={seed}] AUC={auc_c:.4f} F1={f1_c:.4f} ACC={acc_c:.4f} DP={dp_c:.4f} EO={eo_c:.4f}")
+                return auc_c, f1_c, acc_c, dp_c, eo_c
+
         else:
             pbar2 = tqdm(range(edge_epochs), desc=f"[stage3-edge] seed={seed}", unit="epoch",
                          bar_format="{l_bar}{bar:30}{r_bar}")
@@ -626,7 +709,7 @@ def run_edge_adder_unified(args, data, seed_dir):
                     pbar2.set_postfix(loss=f"{float(loss):.3f}", score=f"{robust_score:.3f}", worst_policy=worst_val.get("policy"))
 
 
-# Restore best (including EdgeAdder params)
+        # Restore best (including EdgeAdder params)
         if best['state'] is not None:
             backbone.load_state_dict(best['state']['backbone'])
             clf.load_state_dict(best['state']['clf'])
@@ -657,11 +740,41 @@ def run_edge_adder_unified(args, data, seed_dir):
                 worst_test_idx = 0
             worst_test = test_rows[worst_test_idx]
 
-        elog.log(epoch_offset + edge_epochs, "test", worst_test)
-        elog.close()
+        if eval_only_attack:
+            # Primary 'test' split is attacked-graph evaluation; keep clean result in 'test_clean'.
+            elog.log(epoch_offset + edge_epochs, 'test_clean', worst_test)
 
-        print(f"[TEST seed={seed}] policy={worst_test['policy']}  AUC {worst_test['auc']:.4f}  F1 {worst_test['f1']:.4f}  ACC {worst_test['acc']:.4f}  DP {worst_test['dp']:.4f}  EO {worst_test['eo']:.4f}")
-        return worst_test["auc"], worst_test["f1"], worst_test["acc"], worst_test["dp"], worst_test["eo"]
+            data_att = restore_from_snapshot(clean_snap, device)
+            data_att = apply_nifa_attack(args, data_att)
+            Xa, Ya, EIa = data_att.features, data_att.labels, data_att.edge_index
+            idx_te_a = data_att.idx_test
+
+            test_rows_a, test_scores_a = [], []
+            for name, ed in policies.items():
+                A_te_a = _blend(EIa, ed, num_nodes=int(Xa.size(0)))
+                auc, f1, acc, dp, eo = _eval_on_graph(backbone, clf, Xa, A_te_a, Ya, idx_te_a, data_att)
+                score = (auc + f1) / 2 - dp - eo
+                row = {'policy': name, 'auc': auc, 'f1': f1, 'acc': acc, 'dp': dp, 'eo': eo, 'score': score}
+                test_rows_a.append(row)
+                test_scores_a.append(score)
+
+            if use_minmax:
+                worst_idx = int(torch.tensor(test_scores_a).argmin().item())
+            else:
+                worst_idx = 0
+            worst_test_a = test_rows_a[worst_idx]
+            elog.log(epoch_offset + edge_epochs, 'test', worst_test_a)
+            elog.close()
+
+            print(f"[TEST (clean) seed={seed}] policy={worst_test['policy']} AUC={worst_test['auc']:.4f} F1={worst_test['f1']:.4f} ACC={worst_test['acc']:.4f} DP={worst_test['dp']:.4f} EO={worst_test['eo']:.4f}")
+            print(f"[TEST (eval-attack) seed={seed}] policy={worst_test_a['policy']} AUC={worst_test_a['auc']:.4f} F1={worst_test_a['f1']:.4f} ACC={worst_test_a['acc']:.4f} DP={worst_test_a['dp']:.4f} EO={worst_test_a['eo']:.4f}")
+            return worst_test_a['auc'], worst_test_a['f1'], worst_test_a['acc'], worst_test_a['dp'], worst_test_a['eo']
+        else:
+            elog.log(epoch_offset + edge_epochs, 'test', worst_test)
+            elog.close()
+
+            print(f"[TEST seed={seed}] policy={worst_test['policy']} AUC={worst_test['auc']:.4f} F1={worst_test['f1']:.4f} ACC={worst_test['acc']:.4f} DP={worst_test['dp']:.4f} EO={worst_test['eo']:.4f}")
+            return worst_test['auc'], worst_test['f1'], worst_test['acc'], worst_test['dp'], worst_test['eo']
 
     # Build policies of non-edge pair selection
     use_minmax = args.model == "edge_minmax"
@@ -960,19 +1073,51 @@ def run_vanilla(args, data, seed_dir):
     auc_test, f1_test, acc_test, dp_test, eo_test = get_metrics(
         Y, logit_t, pred=pred_t, idx=idx_te, data=data, neg=False
     )
-    metrics_test = {
+    metrics_test_clean = {
         'auc': auc_test,
         'f1': f1_test,
         'acc': acc_test,
         'dp': dp_test,
-        'eo': eo_test
+        'eo': eo_test,
     }
-    elog.log(args.epochs, "test", metrics_test)
-    elog.close()
 
-    print(f"[TEST] (Seed {seed}) AUC: {auc_test:.4f}  F1: {f1_test:.4f}  ACC: {acc_test:.4f}  DP: {dp_test:.4f}  EO: {eo_test:.4f}")
-    return auc_test, f1_test, acc_test, dp_test, eo_test
+    attack_when = getattr(args, 'attack_when', 'train')
+    eval_only_attack = (getattr(args, 'attack', 'none') == 'nifa' and attack_when == 'eval')
+    if eval_only_attack:
+        # Log clean test separately; primary 'test' split will be the attacked-graph result.
+        elog.log(args.epochs, 'test_clean', metrics_test_clean)
 
+        snap = snapshot_clean_data(data)
+        data_att = restore_from_snapshot(snap, device)
+        data_att = apply_nifa_attack(args, data_att)
+        Xa, Ya, EIa = data_att.features, data_att.labels, data_att.edge_index
+        idx_te_a = data_att.idx_test
+        with torch.no_grad():
+            Ha = backbone(Xa, EIa)
+            logit_a = clf(Ha).squeeze(1)
+        pred_a = (logit_a > 0).long()
+        auc_a, f1_a, acc_a, dp_a, eo_a = get_metrics(
+            Ya, logit_a, pred=pred_a, idx=idx_te_a, data=data_att, neg=False
+        )
+        metrics_test_attack = {
+            'auc': auc_a,
+            'f1': f1_a,
+            'acc': acc_a,
+            'dp': dp_a,
+            'eo': eo_a,
+        }
+        elog.log(args.epochs, 'test', metrics_test_attack)
+        elog.close()
+
+        print(f"[TEST (clean)] (Seed {seed}) AUC: {auc_test:.4f}  F1: {f1_test:.4f}  ACC: {acc_test:.4f}  DP: {dp_test:.4f}  EO: {eo_test:.4f}")
+        print(f"[TEST (eval-attack)] (Seed {seed}) AUC: {auc_a:.4f}  F1: {f1_a:.4f}  ACC: {acc_a:.4f}  DP: {dp_a:.4f}  EO: {eo_a:.4f}")
+        return auc_a, f1_a, acc_a, dp_a, eo_a
+    else:
+        elog.log(args.epochs, 'test', metrics_test_clean)
+        elog.close()
+
+        print(f"[TEST] (Seed {seed}) AUC: {auc_test:.4f}  F1: {f1_test:.4f}  ACC: {acc_test:.4f}  DP: {dp_test:.4f}  EO: {eo_test:.4f}")
+        return auc_test, f1_test, acc_test, dp_test, eo_test
 def load_best_overall_into_args(args):
     """If args.best_overall_path is set, override key HPs from its 'params'."""
 
@@ -1027,7 +1172,8 @@ def main(args):
 
         data = restore_from_snapshot(clean_snap, args.device)
 
-        if getattr(args, "attack", "none") == "nifa":
+        attack_when = getattr(args, "attack_when", "train")
+        if getattr(args, "attack", "none") == "nifa" and attack_when in ("train", "both"):
             def _A_edges(A: SparseTensor) -> int:
                 r, c, _ = A.coo()
                 return int(r.numel())

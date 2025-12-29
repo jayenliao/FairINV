@@ -308,8 +308,12 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
             hp["weight_decay"] = trial.suggest_float("weight_decay", 1e-6, 3e-3, log=True)
             hp["hid_dim"] = trial.suggest_categorical("hid_dim", [32, 64, 128])
 
-        use_zero_dp = trial.suggest_categorical("use_zero_dp", [True, False])
-        use_zero_eo = False if use_zero_dp else trial.suggest_categorical("use_zero_eo", [True, False])
+        if model == "vanilla":
+            use_zero_dp = True
+            use_zero_eo = True
+        else:
+            use_zero_dp = trial.suggest_categorical("use_zero_dp", [True, False])
+            use_zero_eo = False if use_zero_dp else trial.suggest_categorical("use_zero_eo", [True, False])
         hp["lambda_dp"] = 0.0 if use_zero_dp else trial.suggest_float("lambda_dp", 1e-4, 100.0, log=True)
         hp["lambda_eo"] = 0.0 if use_zero_eo else trial.suggest_float("lambda_eo", 1e-4, 100.0, log=True)
 
@@ -405,10 +409,10 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
         # fresh data per seed
         data_seed = restore_from_snapshot(clean_snap, device)
 
-        # apply attack before training
-        if getattr(a, "attack", "none") == "nifa":
-            print("[tune] Applying NIFA attack before training…")
-            data_seed = apply_nifa_attack(a, data_seed)
+        # apply attack before training (if attack_when includes 'train')
+        attack_when = getattr(a, 'attack_when', 'train')
+        if getattr(a, 'attack', 'none') == 'nifa' and attack_when in ('train', 'both'):
+            data = apply_nifa_attack(a, data)
 
         # dispatch trainer on (possibly) attacked graph
         if a.model == "fairinv":
