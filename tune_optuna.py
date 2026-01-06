@@ -190,30 +190,6 @@ def summarize_trial_dir(
         }
     }
 
-
-    def _mean_std(xs):
-        if not xs: return None, None
-        mu = stats.mean(xs)
-        sd = stats.pstdev(xs) if len(xs) > 1 else 0.0
-        return mu, sd
-
-    f1_mean, f1_std = _mean_std(f1_vals)
-    auc_mean, auc_std = _mean_std(auc_vals)
-    dp_mean, dp_std = _mean_std(dp_vals)
-    eo_mean, eo_std = _mean_std(eo_vals)
-
-    return {
-        "val_mean": val_mean,
-        "test_mean": test_mean,
-        "per_seed": per_seed,
-        "val_metric_stats": {
-            "f1_mean": f1_mean, "f1_std": f1_std,
-            "auc_mean": auc_mean, "auc_std": auc_std,
-            "dp_mean": dp_mean, "dp_std": dp_std,
-            "eo_mean": eo_mean, "eo_std": eo_std
-        }
-    }
-
 # -----------------------------
 # Scenario-specific search spaces
 # -----------------------------
@@ -286,38 +262,100 @@ def _suggest_nifa_hparams(trial: optuna.trial.Trial, dataset: str) -> Dict[str, 
 
     return hp
 
-def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset: str,
-                    tune_scope: str = "gnn", attack: str = "none") -> Dict[str, Any]:
-    """Return a dict of suggested hyperparams for this (model, encoder, dataset)."""
+def suggest_hparams(
+    trial: optuna.trial.Trial,
+    model: str,
+    encoder: str,
+    dataset: str,
+    tune_scope: str = "gnn",
+    attack: str = "none",
+    tune_subset: set[str] | None = None,
+) -> Dict[str, Any]:
+    """Return a dict of suggested hyperparams for this (model, encoder, dataset).
+
+    If tune_subset is provided, Optuna will only suggest parameters whose names are
+    contained in the subset; all other hyperparameters remain fixed (typically from
+    CLI defaults and/or --best_overall_path overrides).
+    """
     hp: Dict[str, Any] = {}
+
+    def want(name: str) -> bool:
+        return (tune_subset is None) or (name in tune_subset)
 
     # If only tuning attack, return NIFA hparams directly
     if tune_scope in {"attack", "both"} and attack == "nifa":
-        hp.update(_suggest_nifa_hparams(trial, dataset))
+        if tune_subset is None:
+            hp.update(_suggest_nifa_hparams(trial, dataset))
+        else:
+            # Tune only selected NIFA knobs
+            if want("nifa_node"):
+                hp["nifa_node"] = trial.suggest_int("nifa_node", 1, 200, step=1)
+            if want("nifa_edge"):
+                hp["nifa_edge"] = trial.suggest_int("nifa_edge", 1, 200, step=1)
+            if want("nifa_loops"):
+                hp["nifa_loops"] = trial.suggest_int("nifa_loops", 1, 10, step=1)
         if tune_scope == "attack":
             return hp
 
-    # Common spaces: learning rate, weight decay, dropout, hidden size, layers
-    if tune_scope in {"gnn", "both"}:
+    # Common spaces: learning rate, weight decay, hidden size, and fairness lambdas.
+    # If tune_subset is provided, we allow tuning of any included keys even if
+    # tune_scope would normally exclude them.
+    _scope_allows_gnn = (tune_scope in {"gnn", "both"}) or (
+        tune_subset is not None and any(
+            k in tune_subset
+            for k in [
+                "lr",
+                "weight_decay",
+                "hid_dim",
+                "lambda_dp",
+                "lambda_eo",
+                "pretrain_lambda_dp",
+                "pretrain_lambda_eo",
+            ]
+        )
+    )
+    if _scope_allows_gnn:
         if dataset in SMALL:
-            hp["lr"] = trial.suggest_float("lr", 5e-4, 5e-2, log=True)
-            hp["weight_decay"] = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
-            hp["hid_dim"] = trial.suggest_categorical("hid_dim", [16, 32, 64])
+            if want("lr"):
+                hp["lr"] = trial.suggest_float("lr", 5e-4, 5e-2, log=True)
+            if want("weight_decay"):
+                hp["weight_decay"] = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
+            if want("hid_dim"):
+                hp["hid_dim"] = trial.suggest_categorical("hid_dim", [16, 32, 64])
         else:  # LARGE
-            hp["lr"] = trial.suggest_float("lr", 1e-4, 5e-2, log=True)
-            hp["weight_decay"] = trial.suggest_float("weight_decay", 1e-6, 3e-3, log=True)
-            hp["hid_dim"] = trial.suggest_categorical("hid_dim", [32, 64, 128])
+            if want("lr"):
+                hp["lr"] = trial.suggest_float("lr", 1e-4, 5e-2, log=True)
+            if want("weight_decay"):
+                hp["weight_decay"] = trial.suggest_float("weight_decay", 1e-6, 3e-3, log=True)
+            if want("hid_dim"):
+                hp["hid_dim"] = trial.suggest_categorical("hid_dim", [32, 64, 128])
 
+        # Fairness lambdas: allow a "zero" option unless vanilla.
         if model == "vanilla":
-            use_zero_dp = True
-            use_zero_eo = True
+            if want("lambda_dp"):
+                hp["lambda_dp"] = 0.0
+            if want("lambda_eo"):
+                hp["lambda_eo"] = 0.0
         else:
-            use_zero_dp = trial.suggest_categorical("use_zero_dp", [True, False])
-            use_zero_eo = False if use_zero_dp else trial.suggest_categorical("use_zero_eo", [True, False])
-        hp["lambda_dp"] = 0.0 if use_zero_dp else trial.suggest_float("lambda_dp", 1e-4, 100.0, log=True)
-        hp["lambda_eo"] = 0.0 if use_zero_eo else trial.suggest_float("lambda_eo", 1e-4, 100.0, log=True)
+            if want("lambda_dp"):
+                use_zero_dp = trial.suggest_categorical("use_zero_dp", [True, False])
+                hp["lambda_dp"] = 0.0 if use_zero_dp else trial.suggest_float("lambda_dp", 1e-4, 100.0, log=True)
+            if want("lambda_eo"):
+                # If lambda_dp isn't tuned, we don't force any coupling here.
+                use_zero_eo = trial.suggest_categorical("use_zero_eo", [True, False])
+                hp["lambda_eo"] = 0.0 if use_zero_eo else trial.suggest_float("lambda_eo", 1e-4, 100.0, log=True)
 
-    hp["dropout"] = trial.suggest_float("dropout", 0.0, 0.7)
+        # Optional: separate fairness strength for stage-1 pretraining (pipeline-A).
+        # This lets you keep stage-1 clean (0) while tuning stage-3 lambdas, or vice versa.
+        if want("pretrain_lambda_dp"):
+            use_zero_pre_dp = trial.suggest_categorical("use_zero_pretrain_dp", [True, False])
+            hp["pretrain_lambda_dp"] = 0.0 if use_zero_pre_dp else trial.suggest_float("pretrain_lambda_dp", 1e-4, 10.0, log=True)
+        if want("pretrain_lambda_eo"):
+            use_zero_pre_eo = trial.suggest_categorical("use_zero_pretrain_eo", [True, False])
+            hp["pretrain_lambda_eo"] = 0.0 if use_zero_pre_eo else trial.suggest_float("pretrain_lambda_eo", 1e-4, 10.0, log=True)
+
+    if want("dropout"):
+        hp["dropout"] = trial.suggest_float("dropout", 0.0, 0.7)
     # layer_num: used by GCN/GAT; SGC ignores beyond 1; GIN/SAGE custom modules ignore layer_num internally.
     # if model == "fairinv":
     #     if encoder in ["gcn", "gin", "sgc"]:
@@ -336,20 +374,26 @@ def suggest_hparams(trial: optuna.trial.Trial, model: str, encoder: str, dataset
 
     # Model-specific
     if model == "fairinv":
-        hp["alpha"] = trial.suggest_categorical("alpha", [0.001, 0.01, 0.1, 0.5, 1, 10, 100])
-        hp["lr_sp"] = trial.suggest_categorical("lr_sp", [0.01, 0.05, 0.1, 0.5])
+        if want("alpha"):
+            hp["alpha"] = trial.suggest_categorical("alpha", [0.001, 0.01, 0.1, 0.5, 1, 10, 100])
+        if want("lr_sp"):
+            hp["lr_sp"] = trial.suggest_categorical("lr_sp", [0.01, 0.05, 0.1, 0.5])
         # hp["alpha"] = trial.suggest_float("alpha", 1e-1, 1e+1, log=True)       # balance Var + alpha*Mean
         # hp["lr_sp"] = trial.suggest_float("lr_sp", 1e-2, 5e-1, log=True)       # SAP learning rate
-        hp["env_num"] = trial.suggest_int("env_num", 2, 3)                      # #environments (groups)
+        if want("env_num"):
+            hp["env_num"] = trial.suggest_int("env_num", 2, 3)                      # #environments (groups)
         # partition_times impacts runtime heavily; keep default (3).
 
     if model == "edge_adder" and tune_scope in {"gnn", "both", "edge_adder"}:
         # Candidate edges per node (compute grows with k)
         if dataset in SMALL:
-            hp["edge_k"] = trial.suggest_int("edge_k", 1, 4)
+            if want("edge_k"):
+                hp["edge_k"] = trial.suggest_int("edge_k", 1, 4)
         else:
-            hp["edge_k"] = trial.suggest_int("edge_k", 1, 3)
-        hp["lambda_edge_l1"] = trial.suggest_float("lambda_edge_l1", 1e-5, 1e-2, log=True)
+            if want("edge_k"):
+                hp["edge_k"] = trial.suggest_int("edge_k", 1, 3)
+        if want("lambda_edge_l1"):
+            hp["lambda_edge_l1"] = trial.suggest_float("lambda_edge_l1", 1e-5, 1e-2, log=True)
 
     return hp
 
@@ -369,7 +413,18 @@ def build_trial_dir(root: Path, model: str, encoder: str, dataset: str, objectiv
     return base / f"trial_{trial_number:04d}_{h}"
 
 def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, seeds: List[int], study_stamp:str) -> Tuple[float, float, Path]:
-    hp = suggest_hparams(trial, args.model, args.encoder, args.dataset, args.tune_scope, args.attack)
+    tune_subset = None
+    if getattr(args, "tune_subset", None):
+        tune_subset = {s.strip() for s in str(args.tune_subset).split(",") if s.strip()}
+    hp = suggest_hparams(
+        trial,
+        args.model,
+        args.encoder,
+        args.dataset,
+        args.tune_scope,
+        args.attack,
+        tune_subset=tune_subset,
+    )
     trial.set_user_attr("hparams", hp)
     trial_dir = build_trial_dir(Path(args.log_root), args.model, args.encoder, args.dataset, args.objective, args.tag, study_stamp, trial.number, hp)
     ensure_dir(trial_dir)
@@ -412,7 +467,8 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
         # apply attack before training (if attack_when includes 'train')
         attack_when = getattr(a, 'attack_when', 'train')
         if getattr(a, 'attack', 'none') == 'nifa' and attack_when in ('train', 'both'):
-            data = apply_nifa_attack(a, data)
+            # IMPORTANT: apply the attack to this per-seed fresh copy (avoid mutating the shared original)
+            data_seed = apply_nifa_attack(a, data_seed)
 
         # dispatch trainer on (possibly) attacked graph
         if a.model == "fairinv":
@@ -542,6 +598,17 @@ def make_parser():
     # p.add_argument("--attack", choices=["none", "nifa"], default="none")
     p.add_argument("--tune_scope", choices=["gnn", "edge_adder", "attack", "both"], default="gnn",
                    help="What to tune: victim GNN, attack, or both. For NIFA studies use 'attack'.")
+
+    p.add_argument(
+        "--tune_subset",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated list of hyperparameter names to tune. If provided, Optuna will only sample "
+            "these keys and keep all other hyperparameters fixed (typically from CLI defaults and/or --best_overall_path). "
+            "Example for pipeline-A: 'lambda_dp,lambda_eo,lambda_edge_l1,edge_k'."
+        ),
+    )
 
     # Optuna controls
     p.add_argument("--n_trials", type=int, default=40)

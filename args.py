@@ -91,7 +91,7 @@ def get_parser():
     parser.add_argument('--attack', choices=['none', 'nifa'], default='none',
                         help="Optional pre-training attack pipeline. 'nifa' = node+edge injection (NIFA).")
     parser.add_argument('--attack_when', choices=['train','eval','both'], default='train',
-                        help="When to apply attack: 'train'=before training (poisoning), 'eval'=only during evaluation (evasion), 'both'=apply at both train and eval.")
+                        help="When to apply attack: 'train'=poisoning (pre-training), 'eval'=evasion (eval-time only), 'both'=apply at both train and eval.")
 
     # --- NIFA hyperparameters (namespaced to avoid conflicts) ---
     parser.add_argument('--nifa_T', type=int, default=20)
@@ -105,5 +105,8 @@ def get_parser():
     parser.add_argument('--nifa_epochs', type=int, default=1000)
     parser.add_argument('--nifa_lr', type=float, default=0.001)
     parser.add_argument('--nifa_loops', type=int, default=50)
+
+    parser.add_argument('--nifa_keep_markers', action='store_true',
+                        help="Keep injected node markers (label=-1, sens=-1). Default: sanitize markers to avoid leaking which nodes are injected.")
 
     return parser

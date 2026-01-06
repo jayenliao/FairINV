@@ -84,16 +84,33 @@ def apply_nifa_attack(args, data):
     N1 = int(data.features.size(0))
     E1 = _sparse_edge_count(data.edge_index)
 
-    injected_nodes = int((data.labels < 0).logical_and(data.sens < 0).sum().item())
+    # Record injected node indices (attacker appends new nodes at the end).
+    injected_idx = torch.arange(N0, N1, device=device, dtype=torch.long)
+    data.nifa_injected_idx = injected_idx
+    data.nifa_num_injected = int(N1 - N0)
+
+    keep_markers = bool(getattr(args, "nifa_keep_markers", False))
+    if (not keep_markers) and data.nifa_num_injected > 0:
+        # Sanitize (-1) markers to avoid leaking which nodes are injected.
+        # These nodes are not in train/val/test splits, so their labels/sens are for realism only.
+        with torch.no_grad():
+            # Estimate Bernoulli rates from original (clean) nodes
+            p_y = float(data.labels[:N0].float().mean().clamp(0.0, 1.0).item())
+            p_s = float(data.sens[:N0].float().mean().clamp(0.0, 1.0).item())
+
+            y_new = torch.bernoulli(torch.full((data.nifa_num_injected,), p_y, device=device)).long()
+            s_new = torch.bernoulli(torch.full((data.nifa_num_injected,), p_s, device=device)).float()
+
+            data.labels[injected_idx] = y_new
+            data.sens[injected_idx] = s_new
+
     print(f"[NIFA] Nodes {N0} -> {N1}  (+{N1-N0}) | "
           f"Edges {E0} -> {E1}  (+{E1-E0}) | "
-          f"Injected node markers found: {injected_nodes}")
+          f"keep_markers={keep_markers}")
 
-        # hard sanity checks
+    # hard sanity checks
     assert N1 >= N0, "Node count decreased after attack — impossible."
     assert E1 >= E0, "Edge count did not increase after attack — check Edge_Attack."
-    assert injected_nodes == (N1 - N0), \
-        "Injected nodes not marked with label=-1 & sensitive=-1; verify Edge/Feature_Attack."
 
     # splits must stay on original nodes
     assert int(data.idx_train.max()) < N0
