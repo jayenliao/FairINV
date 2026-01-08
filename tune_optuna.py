@@ -129,6 +129,7 @@ def summarize_trial_dir(
     for sd in sorted([p for p in trial_dir.iterdir() if p.is_dir() and p.name.startswith("seed_")]):
         rows = read_jsonl(sd / "metrics.jsonl")
         val_rows = [r for r in rows if r.get("split") == "val"]
+        val_attack_rows = [r for r in rows if r.get("split") == "val_attack"]
         test_rows = [r for r in rows if r.get("split") == "test"]
         # best val row by objective
         best = None
@@ -139,22 +140,32 @@ def summarize_trial_dir(
                 best_val = v
                 best = r
         test_row = test_rows[-1] if len(test_rows) > 0 else {}
+        val_attack_row = val_attack_rows[-1] if len(val_attack_rows) > 0 else None
+        val_attack_score = (
+            objective_value(val_attack_row, objective, balanced_on, w_dp, w_eo, util_on, util_min, lambda_util)
+            if val_attack_row is not None else None
+        )
         per_seed.append({
             "seed": int(sd.name.split("_")[-1]),
             "best_val_score": best_val,
             "best_val_row": best,
             "test_row": test_row,
             "test_score": objective_value(test_row, objective, balanced_on, w_dp, w_eo, util_on, util_min, lambda_util),
+            "val_attack_row": val_attack_row,
+            "val_attack_score": val_attack_score,
         })
     if not per_seed:
         return {
-            "val_mean": None, "test_mean": None, "per_seed": [],
+            "val_mean": None, "val_attack_mean": None, "test_mean": None, "per_seed": [],
             "val_metric_stats": {"f1_mean": None, "f1_std": None, "auc_mean": None, "auc_std": None}
         }
 
     val_mean = sum(s["best_val_score"] for s in per_seed) / len(per_seed)
     test_scores = [s["test_score"] for s in per_seed if s["test_score"] is not None and not math.isnan(s["test_score"])]
     test_mean = sum(test_scores) / len(test_scores) if test_scores else None
+
+    val_attack_scores = [s["val_attack_score"] for s in per_seed if s.get("val_attack_score") is not None and not math.isnan(s["val_attack_score"]) ]
+    val_attack_mean = sum(val_attack_scores) / len(val_attack_scores) if val_attack_scores else None
 
     # after building per_seed
     f1_vals, auc_vals = [], []
@@ -176,6 +187,7 @@ def summarize_trial_dir(
 
     return {
         "val_mean": val_mean,
+        "val_attack_mean": val_attack_mean,
         "test_mean": test_mean,
         "per_seed": per_seed,
         "val_metric_stats": {
@@ -535,10 +547,33 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
     else:
         val_score_for_study = summ["val_mean"] if summ["val_mean"] is not None else float("-inf")
 
+    # Choose what Optuna should optimize (useful for Experiment-B where validation is clean).
+    chosen = getattr(args, "study_on", "auto")
+    if chosen == "auto":
+        if getattr(args, "attack", "none") == "nifa" and getattr(args, "attack_when", "train") == "eval":
+            chosen = "val_attack"
+        else:
+            chosen = "val"
+
+    if chosen == "test":
+        study_score = summ["test_mean"] if summ["test_mean"] is not None else float("-inf")
+    elif chosen == "val_attack":
+        va = summ.get("val_attack_mean", None)
+        # If val_attack isn't logged (e.g., older logs), fall back to attacked test.
+        study_score = va if va is not None else (summ["test_mean"] if summ["test_mean"] is not None else float("-inf"))
+    else:
+        # default: keep existing behavior (val-based, including mean-minus-std modes)
+        study_score = val_score_for_study
+
+    trial.set_user_attr("study_on", chosen)
+    trial.set_user_attr("study_score", float(study_score) if study_score is not None else float("-inf"))
+    trial.set_user_attr("val_attack_mean", float(summ.get("val_attack_mean")) if summ.get("val_attack_mean") is not None else float("nan"))
+
     # keep legacy attrs for debugging
     val_mean = summ["val_mean"] if summ["val_mean"] is not None else float("-inf")
     test_mean = summ["test_mean"] if summ["test_mean"] is not None else float("nan")
     trial.set_user_attr("val_mean", float(val_mean))
+    trial.set_user_attr("val_attack_mean", float(summ.get("val_attack_mean") if summ.get("val_attack_mean") is not None else float("nan")))
     trial.set_user_attr("test_mean", float(test_mean))
     trial.set_user_attr("val_f1_mean", f1_mean)
     trial.set_user_attr("val_f1_std", f1_std)
@@ -549,7 +584,7 @@ def run_one_trial(args, device, data: FairDataset, trial: optuna.trial.Trial, se
     trial.set_user_attr("val_eo_mean", eo_mean)
     trial.set_user_attr("val_eo_std", eo_std)
 
-    return float(val_score_for_study), float(test_mean), trial_dir
+    return float(study_score), float(test_mean), trial_dir
 
 # -----------------------------
 # CLI & main
@@ -593,6 +628,16 @@ def make_parser():
     p.add_argument("--util_on", choices=["auc","f1"], default="f1")
     p.add_argument("--util_min", type=float, default=None, help="Hard utility floor for attack objectives.")
     p.add_argument("--lambda_util", type=float, default=1.0, help="Hinge penalty for attack_balanced.")
+    p.add_argument(
+        "--study_on",
+        type=str,
+        default="auto",
+        choices=["auto", "val", "val_attack", "test"],
+        help=(
+            "Which split Optuna optimizes. auto -> val_attack when --attack=nifa and --attack_when=eval; otherwise val. "
+            "Use 'val_attack' for Experiment-B (eval-only NIFA) to avoid tuning on test."
+        ),
+    )
 
     # Attack control (we’ll keep GNN HPs fixed and only tune attack HPs)
     # p.add_argument("--attack", choices=["none", "nifa"], default="none")

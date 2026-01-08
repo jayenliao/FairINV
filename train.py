@@ -591,8 +591,29 @@ def run_edge_adder_unified(args, data, seed_dir):
                 data_att = restore_from_snapshot(clean_snap, device)
                 data_att = apply_nifa_attack(args, data_att)
                 Xa, Ya, EIa = data_att.features, data_att.labels, data_att.edge_index
-                idx_te_a = data_att.idx_test
+
+                # Build blended adjacency once and evaluate on attacked val/test (Experiment-B tuning uses val_attack).
                 A_te_a = _blend(EIa, ed0, num_nodes=int(Xa.size(0)))
+
+                # attacked validation
+                idx_va_a = data_att.idx_val
+                auc_va_a, f1_va_a, acc_va_a, dp_va_a, eo_va_a = _eval_on_graph(backbone, clf, Xa, A_te_a, Ya, idx_va_a, data_att)
+                row_va_attack = {
+                    'policy': name0,
+                    'phase': 'final',
+                    'round': int(alt_rounds),
+                    'attack': 'nifa',
+                    'auc': auc_va_a,
+                    'f1': f1_va_a,
+                    'acc': acc_va_a,
+                    'dp': dp_va_a,
+                    'eo': eo_va_a,
+                    'score': (auc_va_a + f1_va_a) / 2 - dp_va_a - eo_va_a,
+                }
+                elog.log(global_ep, 'val_attack', row_va_attack)
+
+                # attacked test
+                idx_te_a = data_att.idx_test
                 auc_a, f1_a, acc_a, dp_a, eo_a = _eval_on_graph(backbone, clf, Xa, A_te_a, Ya, idx_te_a, data_att)
                 row_attack = {
                     'policy': name0,
@@ -747,6 +768,25 @@ def run_edge_adder_unified(args, data, seed_dir):
             data_att = restore_from_snapshot(clean_snap, device)
             data_att = apply_nifa_attack(args, data_att)
             Xa, Ya, EIa = data_att.features, data_att.labels, data_att.edge_index
+
+            # attacked validation (for Experiment-B Optuna tuning)
+            idx_va_a = data_att.idx_val
+            val_rows_a, val_scores_a = [], []
+            for name, ed in policies.items():
+                A_va_a = _blend(EIa, ed, num_nodes=int(Xa.size(0)))
+                auc, f1, acc, dp, eo = _eval_on_graph(backbone, clf, Xa, A_va_a, Ya, idx_va_a, data_att)
+                score = (auc + f1) / 2 - dp - eo
+                row = {'policy': name, 'auc': auc, 'f1': f1, 'acc': acc, 'dp': dp, 'eo': eo, 'score': score, 'attack': 'nifa'}
+                val_rows_a.append(row)
+                val_scores_a.append(score)
+
+            if use_minmax:
+                worst_va_idx = int(torch.tensor(val_scores_a).argmin().item())
+            else:
+                worst_va_idx = 0
+            worst_val_a = val_rows_a[worst_va_idx]
+            elog.log(epoch_offset + edge_epochs, 'val_attack', worst_val_a)
+
             idx_te_a = data_att.idx_test
 
             test_rows_a, test_scores_a = [], []
@@ -1096,6 +1136,21 @@ def run_vanilla(args, data, seed_dir):
             Ha = backbone(Xa, EIa)
             logit_a = clf(Ha).squeeze(1)
         pred_a = (logit_a > 0).long()
+
+        # attacked validation (for Experiment-B Optuna tuning)
+        idx_va_a = data_att.idx_val
+        auc_va_a, f1_va_a, acc_va_a, dp_va_a, eo_va_a = get_metrics(
+            Ya, logit_a, pred=pred_a, idx=idx_va_a, data=data_att, neg=False
+        )
+        metrics_val_attack = {
+            'auc': auc_va_a,
+            'f1': f1_va_a,
+            'acc': acc_va_a,
+            'dp': dp_va_a,
+            'eo': eo_va_a,
+        }
+        elog.log(args.epochs, 'val_attack', metrics_val_attack)
+
         auc_a, f1_a, acc_a, dp_a, eo_a = get_metrics(
             Ya, logit_a, pred=pred_a, idx=idx_te_a, data=data_att, neg=False
         )
