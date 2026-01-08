@@ -461,7 +461,7 @@ def run_edge_adder_unified(args, data, seed_dir):
                     loss_bce = F.binary_cross_entropy_with_logits(logit_tr[idx_tr], Y[idx_tr].float())
                     loss_dp = _soft_dp_from_logits(logit_tr, data.sens, idx_tr) if lam_dp_full > 0.0 else None
                     loss_eo = _get_eo_loss(logit_tr, Y, data, idx_tr, eo_mode) if lam_eo_full > 0.0 else None
-                    loss_l1 = ed.weights().abs().sum()
+                    loss_l1 = ed.weights().abs().mean()
 
                     loss = loss_bce
                     if loss_dp is not None:
@@ -659,7 +659,7 @@ def run_edge_adder_unified(args, data, seed_dir):
                     loss_bce = F.binary_cross_entropy_with_logits(logit_tr[idx_tr], Y[idx_tr].float())
                     loss_dp = _soft_dp_from_logits(logit_tr, data.sens, idx_tr) if lam_dp_full > 0.0 else None
                     loss_eo = _get_eo_loss(logit_tr, Y, data, idx_tr, eo_mode) if lam_eo_full > 0.0 else None
-                    loss_l1 = ed.weights().abs().sum()
+                    loss_l1 = ed.weights().abs().mean()
 
                     obj = loss_bce
                     if loss_dp is not None:
