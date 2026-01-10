@@ -878,7 +878,7 @@ def run_edge_adder_unified(args, data, seed_dir):
                 loss_bce = F.binary_cross_entropy_with_logits(logits[idx_tr], Y[idx_tr].float())
                 loss_dp  = _soft_dp_from_logits(logits, data.sens, idx_tr)
                 loss_eo  = _get_eo_loss(logits, Y, data, idx_tr, eo_mode)
-                loss_l1  = ed.weights().abs().sum()
+                loss_l1  = ed.weights().abs().mean()
                 loss_total = loss_bce + (lam_dp * loss_dp) + (lam_eo * loss_eo) + (lam_l1 * loss_l1)
                 loss_list.append(loss_total)
                 train_perpol.append({
@@ -932,7 +932,7 @@ def run_edge_adder_unified(args, data, seed_dir):
                 loss_bce_v = F.binary_cross_entropy_with_logits(logit_val[idx_tr], Y[idx_tr].float())
                 loss_dp_v  = _soft_dp_from_logits(logit_val, data.sens, idx_tr)
                 loss_eo_v  = _get_eo_loss(logit_val, Y, data, idx_tr, eo_mode)
-                loss_l1_v  = ed.weights().abs().sum()
+                loss_l1_v  = ed.weights().abs().mean()
                 obj_v = loss_bce_v + (lam_dp * loss_dp_v) + (lam_eo * loss_eo_v) + (lam_l1 * loss_l1_v)
                 val_losses.append(obj_v)
                 perpol_val.append({
