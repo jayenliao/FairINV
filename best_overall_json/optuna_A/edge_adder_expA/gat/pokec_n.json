@@ -1,0 +1,29 @@
+{
+  "number": 6,
+  "value": 0.5573703306233235,
+  "params": {
+    "use_zero_dp": true,
+    "use_zero_eo": true,
+    "edge_k": 2,
+    "lambda_edge_l1": 0.0003470967266313641
+  },
+  "user_attrs": {
+    "hparams": {
+      "lambda_dp": 0.0,
+      "lambda_eo": 0.0,
+      "edge_k": 2,
+      "lambda_edge_l1": 0.0003470967266313641
+    },
+    "val_mean": 0.6055292504354123,
+    "test_mean": 0.6887559967690222,
+    "val_f1_mean": 0.65982524533089,
+    "val_f1_std": 0.013880297210556782,
+    "val_auc_mean": 0.7650616798768884,
+    "val_auc_std": 0.004564901069895412,
+    "val_dp_mean": 0.052572988342968856,
+    "val_dp_std": 0.014341902856953529,
+    "val_eo_mean": 0.054341223825508225,
+    "val_eo_std": 0.015371818674682989,
+    "trial_dir": "logs/optuna_A/pokec_n/gat/edge_adder/auc_f1_balanced/20260103-101211_A_freeze_poison_lambdas/trial_0006_571508b7"
+  }
+}

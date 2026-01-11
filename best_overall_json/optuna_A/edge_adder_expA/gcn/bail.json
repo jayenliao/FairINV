@@ -1,0 +1,29 @@
+{
+  "number": 32,
+  "value": 0.6922354106075636,
+  "params": {
+    "use_zero_dp": true,
+    "use_zero_eo": true,
+    "edge_k": 1,
+    "lambda_edge_l1": 0.0004168639952306388
+  },
+  "user_attrs": {
+    "hparams": {
+      "lambda_dp": 0.0,
+      "lambda_eo": 0.0,
+      "edge_k": 1,
+      "lambda_edge_l1": 0.0004168639952306388
+    },
+    "val_mean": 0.7743631712083265,
+    "test_mean": 0.7800580687175094,
+    "val_f1_mean": 0.7872045242052481,
+    "val_f1_std": 0.020932578196793655,
+    "val_auc_mean": 0.8864860942747028,
+    "val_auc_std": 0.012618603808464047,
+    "val_dp_mean": 0.04280832525438796,
+    "val_dp_std": 0.032785352707147865,
+    "val_eo_mean": 0.019673812777261036,
+    "val_eo_std": 0.01579122588835742,
+    "trial_dir": "logs/optuna_A/bail/gcn/edge_adder/auc_f1_balanced/20260105-212127_A_freeze_poison_lambdas/trial_0032_d2278075"
+  }
+}

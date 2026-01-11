@@ -1,0 +1,29 @@
+{
+  "number": 1,
+  "value": 0.6976347683813215,
+  "params": {
+    "use_zero_dp": true,
+    "use_zero_eo": true,
+    "edge_k": 1,
+    "lambda_edge_l1": 0.0026369193213503905
+  },
+  "user_attrs": {
+    "hparams": {
+      "lambda_dp": 0.0,
+      "lambda_eo": 0.0,
+      "edge_k": 1,
+      "lambda_edge_l1": 0.0026369193213503905
+    },
+    "val_mean": 0.774278118038607,
+    "test_mean": 0.8030223467630204,
+    "val_f1_mean": 0.806511406187782,
+    "val_f1_std": 0.02533314351511334,
+    "val_auc_mean": 0.9040224953546818,
+    "val_auc_std": 0.0036311204218915133,
+    "val_dp_mean": 0.03393818223369845,
+    "val_dp_std": 0.029158499811136905,
+    "val_eo_mean": 0.04705065049892634,
+    "val_eo_std": 0.018520585909143794,
+    "trial_dir": "logs/optuna_A/bail/sage/edge_adder/auc_f1_balanced/20260104-122453_A_freeze_poison_lambdas/trial_0001_a15a56d7"
+  }
+}

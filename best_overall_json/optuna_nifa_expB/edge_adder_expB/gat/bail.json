@@ -1,0 +1,45 @@
+{
+  "number": 23,
+  "value": 0.13583726807981278,
+  "params": {
+    "nifa_theta": 0.75,
+    "nifa_alpha": 0.01,
+    "nifa_beta": 2,
+    "nifa_T": 18,
+    "nifa_loops_large": 15,
+    "nifa_loops_small": 13,
+    "nifa_lr": 0.000568660827403219,
+    "nifa_ratio": 0.44208157500416173,
+    "nifa_mode": "degree",
+    "nifa_node": 80,
+    "nifa_edge": 20
+  },
+  "user_attrs": {
+    "hparams": {
+      "nifa_theta": 0.75,
+      "nifa_alpha": 0.01,
+      "nifa_beta": 2,
+      "nifa_T": 18,
+      "nifa_lr": 0.000568660827403219,
+      "nifa_ratio": 0.44208157500416173,
+      "nifa_mode": "degree",
+      "nifa_node": 80,
+      "nifa_edge": 20,
+      "nifa_loops": 13
+    },
+    "study_on": "val_attack",
+    "study_score": 0.13583726807981278,
+    "val_attack_mean": NaN,
+    "val_mean": 0.15263334278076812,
+    "test_mean": 0.13583726807981278,
+    "val_f1_mean": 0.8278792358155369,
+    "val_f1_std": 0.01454591992765192,
+    "val_auc_mean": 0.9138425313692897,
+    "val_auc_std": 0.00929831273229574,
+    "val_dp_mean": 0.09605505516799775,
+    "val_dp_std": 0.007598613926120727,
+    "val_eo_mean": 0.05657828761277038,
+    "val_eo_std": 0.009172637407842,
+    "trial_dir": "logs/optuna_nifa_expB/bail/gat/edge_adder/attack_balanced/20260109-234805_expB_nifa_eval/trial_0023_39ce014f"
+  }
+}
