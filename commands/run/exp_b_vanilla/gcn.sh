@@ -12,7 +12,7 @@ export OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
 
 # Victim config (must match what you tuned against)
 MODEL=${MODEL:-vanilla}     # vanilla | fairinv | edge_adder | edge_minmax
-ENCODER=${ENCODER:-gin}     # gcn | gat | gin | sage | sgc
+ENCODER=${ENCODER:-gcn}     # gcn | gat | gin | sage | sgc
 
 # Seeds / training budget for re-run
 SEED_NUM=${SEED_NUM:-10}
@@ -30,11 +30,11 @@ mkdir -p "${RUN_LOG_ROOT}"
 # Victim tuned hyperparams
 # -------------------------
 declare -A victim_best_paths=(
-  ["german"]="best_overall_json/optuna_big/vanilla/gin/german.json"
-  ["bail"]="best_overall_json/optuna_big/vanilla/gin/bail.json"
-  ["nba"]="best_overall_json/optuna_big/vanilla/gin/nba.json"
-  ["pokec_z"]="best_overall_json/optuna_big/vanilla/gin/pokec_z.json"
-  ["pokec_n"]="best_overall_json/optuna_big/vanilla/gin/pokec_n.json"
+  ["german"]="best_overall_json/optuna_big/vanilla/gcn/german.json"
+  ["bail"]="best_overall_json/optuna_big/vanilla/gcn/bail.json"
+  ["nba"]="best_overall_json/optuna_big/vanilla/gcn/nba.json"
+  ["pokec_z"]="best_overall_json/optuna_big/vanilla/gcn/pokec_z.json"
+  ["pokec_n"]="best_overall_json/optuna_big/vanilla/gcn/pokec_n.json"
 )
 
 # -------------------------

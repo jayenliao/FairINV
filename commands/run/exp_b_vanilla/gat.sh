@@ -20,14 +20,14 @@ START_SEED=${START_SEED:-42}
 EPOCHS=${EPOCHS:-1000}
 
 # Datasets
-datasets=(${DATASETS:-pokec_z pokec_n german bail nba})
+datasets=(${DATASETS:-pokec_z pokec_n bail german nba})
 
 # Where to write rerun logs
 RUN_LOG_ROOT=${RUN_LOG_ROOT:-logs/rerun_expB_tuned_nifa}
 mkdir -p "${RUN_LOG_ROOT}"
 
 # -------------------------
-# Victim tuned hyperparams 
+# Victim tuned hyperparams
 # -------------------------
 declare -A victim_best_paths=(
   ["german"]="best_overall_json/optuna_big/vanilla/gat/german.json"
