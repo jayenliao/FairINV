@@ -45,7 +45,7 @@ def get_parser():
                         help='Mode for equal opportunity loss.')
     parser.add_argument('--lambda_edge_l1', type=float, default=1e-4, help='L1 sparsity on learnable edges.')
     # edge adder pipeline variants
-    parser.add_argument('--edge_pipeline', type=str, choices=['joint','freeze_gnn_then_edge'], default='joint',
+    parser.add_argument('--edge_pipeline', type=str, choices=['joint','freeze_gnn_then_edge'], default='freeze_gnn_then_edge',
                         help="EdgeAdder training pipeline: 'joint' or 'freeze_gnn_then_edge'.")
     parser.add_argument('--pretrain_epochs', type=int, default=0,
                         help='Stage-1 epochs (GNN pretrain). 0 => use --epochs.')
