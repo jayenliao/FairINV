@@ -10,7 +10,7 @@ export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
 
 MODEL=${MODEL:-edge_adder}     # vanilla | fairinv | edge_adder | edge_minmax
-ENCODER=${ENCODER:-gat}        # gcn | gat | gin | sage | sgc
+ENCODER=${ENCODER:-sage}        # gcn | gat | gin | sage | sgc
 SEED_NUM=${SEED_NUM:-10}
 START_SEED=${START_SEED:-42}
 EPOCHS=${EPOCHS:-1000}
@@ -30,11 +30,11 @@ mkdir -p "${RUN_LOG_ROOT}"
 
 # Victim tuned hyperparams (EdgeAdder clean tuning)
 declare -A victim_best_paths=(
-  ["german"]="best_overall_json/optuna_big/edge_adder/gat/german.json"
-  ["bail"]="best_overall_json/optuna_big/edge_adder/gat/bail.json"
-  ["nba"]="best_overall_json/optuna_big/edge_adder/gat/nba.json"
-  ["pokec_z"]="best_overall_json/optuna_big/edge_adder/gat/pokec_z.json"
-  ["pokec_n"]="best_overall_json/optuna_big/edge_adder/gat/pokec_n.json"
+  ["german"]="best_overall_json/optuna_big/edge_adder/sage/german.json"
+  ["bail"]="best_overall_json/optuna_big/edge_adder/sage/bail.json"
+  ["nba"]="best_overall_json/optuna_big/edge_adder/sage/nba.json"
+  ["pokec_z"]="best_overall_json/optuna_big/edge_adder/sage/pokec_z.json"
+  ["pokec_n"]="best_overall_json/optuna_big/edge_adder/sage/pokec_n.json"
 )
 
 for ds in "${datasets[@]}"; do
