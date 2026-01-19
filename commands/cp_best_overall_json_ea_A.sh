@@ -8,7 +8,7 @@ set -euo pipefail
 
 BASE_DIR="${1:-logs/optuna_A}"
 MODEL="${2:-edge_adder}"
-METRIC="${3:-auc_f1_balanced}"   # default to auc_f1 to avoid overwriting across metrics
+METRIC="${3:-attack_balanced}"   # default to auc_f1 to avoid overwriting across metrics
 EXP="${4:-expA}"
 
 # Output root follows your requested layout:

@@ -27,7 +27,7 @@ LOG_ROOT=${LOG_ROOT:-logs/optuna_nifa_expA_train}
 TAG=${TAG:-expA_train_tune_attack}
 
 # Where to export stable JSONs (portable)
-EXPORT_DIR=${EXPORT_DIR:-best_overall_json/nifa_train_tuned/${ENCODER}}
+EXPORT_DIR=${EXPORT_DIR:-best_overall_json/optuna_nifa_expA/vanilla_expA/${ENCODER}}
 mkdir -p "${EXPORT_DIR}"
 
 # (Optional but recommended) fix victim hyperparams during NIFA tuning
