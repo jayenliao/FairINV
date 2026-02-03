@@ -78,9 +78,12 @@ def _random_pairs(idx_a: Tensor, idx_b: Tensor, per_node: int, Aset: set, device
     return torch.tensor(i_all, device=device), torch.tensor(j_all, device=device)
 
 @torch.no_grad()
-def build_policies(features: Tensor, sens: Tensor, A: SparseTensor,
-                   policy_names: list = ["same_largest", "cross_smallest", "same_smallest", "cross_random", "same_random"],
-                   k_per_node: int = 2, seed: int = 0):
+def build_policies(
+    features: Tensor, sens: Tensor, A: SparseTensor,
+    policy_names: list = ["same_largest", "cross_smallest", "same_smallest", "cross_random", "same_random"],
+    k_per_node: int = 2, seed: int = 0,
+    node_subset: Tensor | None = None
+) -> dict:
     """
     Returns dict name -> pairs LongTensor [2, M].
     Policies:
@@ -98,9 +101,14 @@ def build_policies(features: Tensor, sens: Tensor, A: SparseTensor,
     s = sens.long().cpu()
     idx0 = torch.where(s == 0)[0]
     idx1 = torch.where(s == 1)[0]
-    all_idx = torch.arange(features.size(0))
     Aset = _coo_edge_set(A)
-
+    if node_subset is not None:
+        node_subset = node_subset.detach().cpu().long()
+        mask = torch.zeros(features.size(0), dtype=torch.bool)
+        mask[node_subset] = True
+        idx0 = idx0[mask[idx0]]
+        idx1 = idx1[mask[idx1]]
+        
     out = {}
 
     # p1: same-group largest similarity
