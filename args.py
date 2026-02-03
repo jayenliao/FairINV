@@ -105,8 +105,50 @@ def get_parser():
     parser.add_argument('--nifa_epochs', type=int, default=1000)
     parser.add_argument('--nifa_lr', type=float, default=0.001)
     parser.add_argument('--nifa_loops', type=int, default=50)
-
+    parser.add_argument('--nifa_gamma', type=float, default=1.0,
+                    help="Weight on task utility (CE) inside NIFA objective. 0 => utility-agnostic attack.")
     parser.add_argument('--nifa_keep_markers', action='store_true',
                         help="Keep injected node markers (label=-1, sens=-1). Default: sanitize markers to avoid leaking which nodes are injected.")
+
+    # --- Adversarial training defense ---
+    parser.add_argument('--advtrain', action='store_true',
+                        help='Enable adversarial training defense (generate attacked graphs during training).')
+    parser.add_argument('--advtrain_attack', choices=['none','nifa'], default='nifa',
+                        help='Adversary used for generating training-time attacked graphs.')
+    parser.add_argument('--advtrain_mode', choices=['mix','robust'], default='mix',
+                        help="mix: L_clean + lambda_adv * mean(L_adv). robust: reduce over {clean, adv_i}.")
+    parser.add_argument('--advtrain_k', type=int, default=1,
+                        help='Number of attacked graph variants per epoch.')
+    parser.add_argument('--advtrain_gen', choices=['precompute','on_the_fly'], default='precompute',
+                        help='How to generate attacked graphs.')
+    parser.add_argument('--advtrain_refresh', type=int, default=0,
+                        help='When advtrain_gen=on_the_fly, regenerate every N epochs (0 disables).')
+    parser.add_argument('--advtrain_cache_device', action='store_true',
+                        help='Cache generated attacked variants on GPU (faster, more memory).')
+
+    parser.add_argument('--advtrain_mix_lambda', type=float, default=1.0,
+                        help='lambda_adv used by advtrain_mode=mix.')
+    parser.add_argument('--advtrain_include_clean', action='store_true',
+                        help='Include clean graph in robust reduction (advtrain_mode=robust).')
+    parser.add_argument('--advtrain_reduce', choices=['mean','max','logsumexp'], default='max',
+                        help='Reduction across attacked variants (and clean if included) for robust training.')
+    parser.add_argument('--advtrain_tau', type=float, default=0.5,
+                        help='Temperature for logsumexp reduction.')
+    parser.add_argument('--advtrain_seed_stride', type=int, default=1000,
+                        help='Seed stride for generating different attack variants.')
+
+    # Optional per-variant NIFA budgets (length 1 or length K; broadcasts if length=1)
+    parser.add_argument('--advtrain_nifa_node', nargs='+', type=int, default=None,
+                        help='Per-variant injected node counts.')
+    parser.add_argument('--advtrain_nifa_edge', nargs='+', type=int, default=None,
+                        help='Per-variant injected edge budgets.')
+    parser.add_argument('--advtrain_nifa_ratio', nargs='+', type=float, default=None,
+                        help='Per-variant target ratio.')
+    parser.add_argument('--advtrain_nifa_gamma', nargs='+', type=float, default=None,
+                        help='Per-variant NIFA gamma (utility weight).')
+
+    # EdgeAdder option: whether candidates may involve injected nodes
+    parser.add_argument('--edge_include_injected', action='store_true',
+                        help='If set, allow edge-candidate construction to include NIFA-injected nodes. Default: ignore injected nodes.')
 
     return parser
