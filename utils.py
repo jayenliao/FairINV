@@ -3,8 +3,42 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 import os, json, random
+from contextlib import contextmanager
 from scipy.spatial import distance_matrix
 from sklearn.metrics import accuracy_score, roc_auc_score, f1_score
+
+@contextmanager
+def temp_seed(seed: int, use_cuda: bool | None = None):
+    """
+    Temporarily set RNG seeds (Python/NumPy/Torch) and restore after.
+    Useful for generating attack variants without perturbing training RNG.
+    """
+    import numpy as _np
+    import random as _random
+    import torch as _torch
+
+    if use_cuda is None:
+        use_cuda = _torch.cuda.is_available()
+
+    py_state = _random.getstate()
+    np_state = _np.random.get_state()
+    torch_state = _torch.random.get_rng_state()
+    cuda_states = _torch.cuda.get_rng_state_all() if use_cuda else None
+
+    _random.seed(seed)
+    _np.random.seed(seed)
+    _torch.manual_seed(seed)
+    if use_cuda:
+        _torch.cuda.manual_seed_all(seed)
+
+    try:
+        yield
+    finally:
+        _random.setstate(py_state)
+        _np.random.set_state(np_state)
+        _torch.random.set_rng_state(torch_state)
+        if use_cuda and cuda_states is not None:
+            _torch.cuda.set_rng_state_all(cuda_states)
 
 def configure_threads(num_threads: int) -> None:
     """
