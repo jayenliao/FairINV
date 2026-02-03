@@ -185,8 +185,7 @@ class Feature_Attack(nn.Module):
 
                 # loss_ce
                 loss_ce = cross_entropy(output_train, label_train)
-
-                loss_F = -loss_sp - loss_eo - loss_cf + loss_ce
+                loss_F = -loss_sp - loss_eo - loss_cf + (getattr(self.args, 'gamma', 1.0) * loss_ce)
                 optimizer_F.zero_grad()
                 loss_F.backward()
                 optimizer_F.step()

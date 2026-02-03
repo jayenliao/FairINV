@@ -67,6 +67,7 @@ def apply_nifa_attack(args, data):
         T=args.nifa_T, theta=args.nifa_theta,
         node=args.nifa_node, edge=args.nifa_edge,
         alpha=args.nifa_alpha, beta=args.nifa_beta,
+        gamma=getattr(args, 'nifa_gamma', 1.0),
         ratio=args.nifa_ratio, mode=args.nifa_mode,
         epochs=args.nifa_epochs, lr=args.nifa_lr, loops=args.nifa_loops,
         hid_dim=args.hid_dim
