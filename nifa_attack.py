@@ -122,7 +122,7 @@ class Edge_Attack():
 
 
 class Feature_Attack(nn.Module):
-    def __init__(self, g, in_dim, hid_dim, out_dim, node):
+    def __init__(self, g, in_dim, hid_dim, out_dim, node, gamma):
         super(Feature_Attack, self).__init__()
         self.model = GCN(in_dim, hid_dim, out_dim)
 
@@ -132,6 +132,7 @@ class Feature_Attack(nn.Module):
         self.feature = nn.Parameter(torch.zeros(node, in_dim).normal_(mean=0.5,std=0.5))
 
         self.node = node
+        self.gamma = gamma
 
     def forward(self, g):
         return self.model(g, torch.cat((g.ndata["feature"][:-self.node], self.feature), dim=0))
@@ -185,7 +186,7 @@ class Feature_Attack(nn.Module):
 
                 # loss_ce
                 loss_ce = cross_entropy(output_train, label_train)
-                loss_F = -loss_sp - loss_eo - loss_cf + (getattr(self.args, 'gamma', 1.0) * loss_ce)
+                loss_F = -loss_sp - loss_eo - loss_cf + (self.gamma * loss_ce)
                 optimizer_F.zero_grad()
                 loss_F.backward()
                 optimizer_F.step()
@@ -200,7 +201,8 @@ class Attacker():
         self.args = args
         self.bayesian_network = Bayesian_Network(in_dim, hid_dim, out_dim, args.T, args.theta, device).to(device)
         self.edge_attack = Edge_Attack(args.node, args.edge, args.mode)
-        self.feature_attack = Feature_Attack(g, in_dim, hid_dim, out_dim, args.node).to(device)
+        gamma = getattr(args, 'gamma', 1.0)
+        self.feature_attack = Feature_Attack(g, in_dim, hid_dim, out_dim, args.node, gamma).to(device)
 
     def attack(self, g, index_split):
         uncertainty = self.bayesian_network.optimize(g, self.args.lr)
