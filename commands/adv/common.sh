@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Repo root detection (works even if scripts live under commands/adv)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Prefer git to locate repo top
+# --- Robust repo root detection ---
 if command -v git >/dev/null 2>&1 && git -C "${SCRIPT_DIR}" rev-parse --show-toplevel >/dev/null 2>&1; then
   REPO_ROOT="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel)"
 else
-  # Fallback: walk upward until train.py is found
   REPO_ROOT="${SCRIPT_DIR}"
   while [[ "${REPO_ROOT}" != "/" && ! -f "${REPO_ROOT}/train.py" ]]; do
     REPO_ROOT="$(dirname "${REPO_ROOT}")"
@@ -22,14 +20,21 @@ fi
 PYTHON_BIN="${PYTHON_BIN:-python}"
 TRAIN_PY="${TRAIN_PY:-${REPO_ROOT}/train.py}"
 
-# Default log dir (keep your current convention if you want)
-LOG_ROOT="${LOG_ROOT:-${REPO_ROOT}/commands/logs_suite}"
-
 # Default runtime knobs (override via env vars)
 GPU_ID="${GPU_ID:-}"
 DEVICE="${DEVICE:-cuda}"
 NUM_THREADS="${NUM_THREADS:-4}"
-LOG_ROOT="${LOG_ROOT:-${REPO_ROOT}/logs_suite}"
+
+# Default log dir:
+# - if <repo>/commands exists => <repo>/commands/logs_suite
+# - else => <repo>/logs_suite
+if [[ -z "${LOG_ROOT:-}" ]]; then
+  if [[ -d "${REPO_ROOT}/commands" ]]; then
+    LOG_ROOT="${REPO_ROOT}/commands/logs_suite"
+  else
+    LOG_ROOT="${REPO_ROOT}/logs_suite"
+  fi
+fi
 
 # Default experiment knobs (override via env vars)
 EPOCHS="${EPOCHS:-300}"
@@ -39,7 +44,12 @@ LAMBDA_DP="${LAMBDA_DP:-0.0}"
 LAMBDA_EO="${LAMBDA_EO:-0.0}"
 EO_MODE="${EO_MODE:-both}"
 
-BEST_OVERALL_PATH="${BEST_OVERALL_PATH:-}"  # optional path to best_overall.json
+# best_overall JSONs:
+# - BEST_OVERALL_PATHS: space-separated list (e.g., "victim.json nifa.json")
+# - BEST_OVERALL_PATH : single file (legacy)
+BEST_OVERALL_PATHS="${BEST_OVERALL_PATHS:-}"
+BEST_OVERALL_PATH="${BEST_OVERALL_PATH:-}"
+BEST_OVERALL_MERGE_ALL="${BEST_OVERALL_MERGE_ALL:-0}"  # if your args support it
 
 # NIFA defaults (override via env vars)
 NIFA_NODE="${NIFA_NODE:-102}"
@@ -52,6 +62,7 @@ NIFA_EPOCHS="${NIFA_EPOCHS:-1000}"
 NIFA_LR="${NIFA_LR:-0.001}"
 NIFA_LOOPS="${NIFA_LOOPS:-50}"
 NIFA_KEEP_MARKERS="${NIFA_KEEP_MARKERS:-0}"
+NIFA_GAMMA="${NIFA_GAMMA:-1.0}"   # only passed if --nifa_gamma exists
 
 DRY_RUN="${DRY_RUN:-0}"
 
@@ -63,12 +74,6 @@ has_flag() {
 maybe_cuda_visible() {
   if [[ -n "${GPU_ID}" ]]; then
     export CUDA_VISIBLE_DEVICES="${GPU_ID}"
-  fi
-}
-
-maybe_best_overall() {
-  if [[ -n "${BEST_OVERALL_PATH}" ]] && has_flag "--best_overall_path"; then
-    echo "--best_overall_path" "${BEST_OVERALL_PATH}"
   fi
 }
 
@@ -135,11 +140,25 @@ run_train() {
     "--attack_when" "${attack_when}"
   )
 
-  # Optionally load optuna best_overall
-  read -r -a bo <<<"$(maybe_best_overall || true)"
-  args+=("${bo[@]}")
+  # --- best_overall JSON(s) ---
+  # Prefer BEST_OVERALL_PATHS (multi) over BEST_OVERALL_PATH (single)
+  if has_flag "--best_overall_path"; then
+    if [[ -n "${BEST_OVERALL_PATHS}" ]]; then
+      # shellcheck disable=SC2206
+      local bo_arr=(${BEST_OVERALL_PATHS})
+      args+=("--best_overall_path" "${bo_arr[@]}")
+      if [[ "${BEST_OVERALL_MERGE_ALL}" == "1" ]] && has_flag "--best_overall_merge_all"; then
+        args+=("--best_overall_merge_all")
+      fi
+    elif [[ -n "${BEST_OVERALL_PATH}" ]]; then
+      args+=("--best_overall_path" "${BEST_OVERALL_PATH}")
+      if [[ "${BEST_OVERALL_MERGE_ALL}" == "1" ]] && has_flag "--best_overall_merge_all"; then
+        args+=("--best_overall_merge_all")
+      fi
+    fi
+  fi
 
-  # NIFA knobs (only if attack is nifa or your extra args rely on them)
+  # NIFA knobs (only if attack is nifa)
   if [[ "${attack}" == "nifa" ]]; then
     args+=(
       "--nifa_node" "${NIFA_NODE}"
@@ -155,6 +174,10 @@ run_train() {
     if [[ "${NIFA_KEEP_MARKERS}" == "1" ]]; then
       args+=("--nifa_keep_markers")
     fi
+
+    # Optional utility weight if supported
+    read -r -a gg <<<"$(maybe_nifa_gamma_flag "${NIFA_GAMMA}" || true)"
+    args+=("${gg[@]}")
   fi
 
   # Extra args
@@ -162,6 +185,7 @@ run_train() {
 
   echo
   echo "=============================="
+  echo "REPO ${REPO_ROOT}"
   echo "RUN  dataset=${dataset} encoder=${encoder} model=${model} attack=${attack} when=${attack_when}"
   echo "LOG  ${LOG_ROOT}"
   echo "CMD  ${PYTHON_BIN} ${TRAIN_PY} ${args[*]}"
