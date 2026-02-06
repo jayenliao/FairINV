@@ -12,6 +12,7 @@ from args import get_parser
 from data import FairDataset
 from utils import Results, configure_threads, set_seed, get_metrics
 from policies import build_policies
+from adv_training import AdvTrainConfig, AdvGraphPool, reduce_tensor_list
 from models import ConstructModel, FairINV, EdgeAdder
 from logger import EpochLogger
 from nifa_bridge import apply_nifa_attack
@@ -1003,6 +1004,13 @@ def run_vanilla(args, data, seed_dir):
     lam_eo  = float(getattr(args, "lambda_eo", 0.0))
     eo_mode = getattr(args, "eo_mode", "tpr")
 
+    # Adv setup
+    adv_cfg = AdvTrainConfig.from_args(args)
+    adv_pool = None
+    if adv_cfg.enabled:
+        base_snap = snapshot_clean_data(data)
+        adv_pool = AdvGraphPool(args, adv_cfg, base_snap, restore_from_snapshot, seed=seed, device=device)
+
     # Build models (backbone + clf)
     backbone = ConstructModel(in_dim, args.hid_dim, args.encoder, args.layer_num).to(device)
     clf = nn.Linear(args.hid_dim, out_dim).to(device)
@@ -1014,6 +1022,7 @@ def run_vanilla(args, data, seed_dir):
     best = {'score': -1e9, 'state': None}
     elog = EpochLogger(seed_dir, model=args.model)
 
+    l1 = None
     for ep in pbar:
         backbone.train()
         clf.train()
@@ -1021,13 +1030,40 @@ def run_vanilla(args, data, seed_dir):
 
         A_blend = EI
 
-        H = backbone(X, A_blend)          # [N, hid]
-        logits = clf(H).squeeze(1)        # [N]
+        # ---- clean loss ----
+        H = backbone(X, EI)
+        logits = clf(H).squeeze(1)
+
         loss_bce = loss_fn(logits[idx_tr], Y[idx_tr].float())
         loss_dp  = _soft_dp_from_logits(logits, data.sens, idx_tr)
         loss_eo  = _get_eo_loss(logits, Y, data, idx_tr, eo_mode)
-        l1 = None
-        loss = loss_bce + (lam_dp * loss_dp) + (lam_eo * loss_eo)
+        loss_clean = loss_bce + (lam_dp * loss_dp) + (lam_eo * loss_eo)
+        loss = loss_clean
+
+        adv_losses = []
+
+        # ---- adversarial training variants ----
+        if adv_pool is not None and adv_cfg.enabled and adv_cfg.k > 0:
+            variants = adv_pool.get_variants(ep)
+            for dv in variants:
+                Hv = backbone(dv.features, dv.edge_index)
+                logv = clf(Hv).squeeze(1)
+
+                lb = loss_fn(logv[dv.idx_train], dv.labels[dv.idx_train].float())
+                ldp = _soft_dp_from_logits(logv, dv.sens, dv.idx_train)
+                leo = _get_eo_loss(logv, dv.labels, dv, dv.idx_train, eo_mode)
+                adv_losses.append(lb + (lam_dp * ldp) + (lam_eo * leo))
+
+            if len(adv_losses) > 0:
+                if adv_cfg.mode == "mix":
+                    loss = loss_clean + adv_cfg.mix_lambda * reduce_tensor_list(adv_losses, method="mean", tau=adv_cfg.tau)
+                else:
+                    items = []
+                    if adv_cfg.include_clean:
+                        items.append(loss_clean)
+                    items.extend(adv_losses)
+                    loss = reduce_tensor_list(items, method=adv_cfg.reduce, tau=adv_cfg.tau)
+
 
         # --- Train metrics & logging ---
         with torch.no_grad():
