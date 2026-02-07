@@ -112,22 +112,22 @@ for ds in ${DATASETS}; do
   for enc in ${ENCODERS}; do
 
     # ---------- 1) EdgeAdder (no advtrain) ----------
-    v_edge="best_overall_json/optuna_big/edge_adder/${enc}/${ds}.json"
-    a_edge="best_overall_json/optuna_nifa_expB/edge_adder_expB/${enc}/${ds}.json"
-    if need_json_or_skip "${v_edge}" && need_json_or_skip "${a_edge}"; then
-      run_one "${ds}" "${enc}" "edge_adder" "edge_adder" "${v_edge}" "${a_edge}" \
-        --edge_pipeline "${EDGE_PIPELINE}" \
-        --alt_rounds "${ALT_ROUNDS}" \
-        --alt_edge_epochs "${ALT_EDGE_EPOCHS}" \
-        --alt_gnn_epochs "${ALT_GNN_EPOCHS}"
-    fi
+    # v_edge="best_overall_json/optuna_big/edge_adder/${enc}/${ds}.json"
+    # a_edge="best_overall_json/optuna_nifa_expB/edge_adder_expB/${enc}/${ds}.json"
+    # if need_json_or_skip "${v_edge}" && need_json_or_skip "${a_edge}"; then
+    #   run_one "${ds}" "${enc}" "edge_adder" "edge_adder" "${v_edge}" "${a_edge}" \
+    #     --edge_pipeline "${EDGE_PIPELINE}" \
+    #     --alt_rounds "${ALT_ROUNDS}" \
+    #     --alt_edge_epochs "${ALT_EDGE_EPOCHS}" \
+    #     --alt_gnn_epochs "${ALT_GNN_EPOCHS}"
+    # fi
 
     # ---------- 2) Vanilla baseline ----------
-    v_van="best_overall_json/optuna_big/vanilla/${enc}/${ds}.json"
-    a_van="best_overall_json/optuna_nifa_expB/vanilla_expB/${enc}/${ds}.json"
-    if need_json_or_skip "${v_van}" && need_json_or_skip "${a_van}"; then
-      run_one "${ds}" "${enc}" "vanilla" "vanilla" "${v_van}" "${a_van}"
-    fi
+    # v_van="best_overall_json/optuna_big/vanilla/${enc}/${ds}.json"
+    # a_van="best_overall_json/optuna_nifa_expB/vanilla_expB/${enc}/${ds}.json"
+    # if need_json_or_skip "${v_van}" && need_json_or_skip "${a_van}"; then
+    #   run_one "${ds}" "${enc}" "vanilla" "vanilla" "${v_van}" "${a_van}"
+    # fi
 
     # ---------- 3) Vanilla + AdvTrain ----------
     if [[ "${ADV_SUPPORTED}" == "1" ]]; then
