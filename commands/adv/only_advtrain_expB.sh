@@ -38,10 +38,15 @@ ADV_K="${ADV_K:-2}"
 ADV_REDUCE="${ADV_REDUCE:-max}"       # mean|max|logsumexp
 ADV_TAU="${ADV_TAU:-0.5}"
 ADV_MIX_LAMBDA="${ADV_MIX_LAMBDA:-1.0}"
+LAMBDA_DP="${LAMBDA_DP:-0.0}"              # 0 => no DP penalty; >0 => add DP penalty with given lambda
+LAMBDA_EO="${LAMBDA_EO:-0.0}"              # 0 => no EO penalty; >0 => add EO penalty with given lambda
 
 # Logging
-LOG_ROOT="${LOG_ROOT:-${REPO_ROOT}/logs/compare_expB_k-${ADV_K}}"
+LOG_ROOT="${LOG_ROOT:-${REPO_ROOT}/logs/compare_expB_k-${ADV_K}_lambda_DP-${LAMBDA_DP}_lambda_EO-${LAMBDA_EO}}"
 mkdir -p "${LOG_ROOT}"
+echo "[INFO] Logs will be written to: ${LOG_ROOT}"
+tStart=$(date +%s)
+echo "tStart=$tStart ($(date -d "@$tStart" '+%F %T %Z'))"
 
 # Behavior
 STRICT="${STRICT:-0}"    # 1 => error if any JSON missing; 0 => skip missing combos
@@ -90,6 +95,8 @@ run_one() {
     --epochs "${EPOCHS}"
     --log_dir "${LOG_ROOT}/${tag}"
     --best_overall_path "${vpath}" "${apath}"
+    --lambda_dp "${LAMBDA_DP}"
+    --lambda_eo "${LAMBDA_EO}"
   )
   cmd+=("${extra[@]}")
 
@@ -123,8 +130,8 @@ for ds in ${DATASETS}; do
     # fi
 
     # ---------- 2) Vanilla baseline ----------
-    # v_van="best_overall_json/optuna_big/vanilla/${enc}/${ds}.json"
-    # a_van="best_overall_json/optuna_nifa_expB/vanilla_expB/${enc}/${ds}.json"
+    v_van="best_overall_json/optuna_big/vanilla/${enc}/${ds}.json"
+    a_van="best_overall_json/optuna_nifa_expB/vanilla_expB/${enc}/${ds}.json"
     # if need_json_or_skip "${v_van}" && need_json_or_skip "${a_van}"; then
     #   run_one "${ds}" "${enc}" "vanilla" "vanilla" "${v_van}" "${a_van}"
     # fi
@@ -147,3 +154,6 @@ done
 
 echo
 echo "[DONE] Logs written under: ${LOG_ROOT}"
+tEnd=$(date +%s)
+echo "tEnd=$tEnd   ($(date -d "@$tEnd" '+%F %T %Z'))"
+echo "elapsed=$((tEnd - tStart))s"
