@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence
 
 import torch
 from torch_sparse import SparseTensor
@@ -33,6 +33,69 @@ def _broadcast_list(values: Optional[Sequence], k: int, name: str):
     raise ValueError(f"{name} must have length 1 or {k}, got {len(values)}")
 
 
+def project_box_budget(w: torch.Tensor, w_max: float = 1.0, budget: float = -1.0) -> torch.Tensor:
+    """Project weights to 0<=w<=w_max, optionally with sum(w)<=budget.
+
+    Note: budget projection uses a cheap scaling projection after clamping, which is
+    stable and usually sufficient for PGD-style inner maximization.
+    """
+    w = w.clamp_(0.0, float(w_max))
+    if budget is None:
+        return w
+    budget = float(budget)
+    if budget < 0:
+        return w
+    s = w.sum()
+    if s <= budget:
+        return w
+    return w * (budget / (s + 1e-12))
+
+
+def build_added_edge_sparse(num_nodes: int, cand_pairs_ij: torch.LongTensor, w: torch.Tensor) -> SparseTensor:
+    """Undirected SparseTensor with values=w on candidate pairs.
+
+    cand_pairs_ij: LongTensor [2, M] with undirected pairs (i,j) (not duplicated)
+    w: Tensor [M] in float (may require_grad)
+    """
+    if cand_pairs_ij.numel() == 0:
+        return SparseTensor(sparse_sizes=(num_nodes, num_nodes)).to(w.device)
+
+    i, j = cand_pairs_ij[0], cand_pairs_ij[1]
+    # duplicate for undirected
+    row = torch.cat([i, j], dim=0)
+    col = torch.cat([j, i], dim=0)
+    val = torch.cat([w, w], dim=0)
+    return SparseTensor(row=row, col=col, value=val, sparse_sizes=(num_nodes, num_nodes)).coalesce()
+
+
+def pgd_maximize_weights(
+    loss_fn: Callable[[torch.Tensor], torch.Tensor],
+    w0: torch.Tensor,
+    steps: int = 5,
+    step_size: float = 0.1,
+    use_sign: bool = True,
+    w_max: float = 1.0,
+    budget: float = -1.0,
+) -> torch.Tensor:
+    """Maximize loss_fn(w) over w with PGD, returning w_adv (detached)."""
+    steps = int(steps)
+    if steps <= 0:
+        return project_box_budget(w0.detach(), w_max=w_max, budget=budget).detach()
+
+    w = w0.detach()
+    w = project_box_budget(w, w_max=w_max, budget=budget).detach().requires_grad_(True)
+
+    for _ in range(steps):
+        loss = loss_fn(w)
+        grad = torch.autograd.grad(loss, w, only_inputs=True, retain_graph=False, create_graph=False)[0]
+        if use_sign:
+            grad = grad.sign()
+        w = w + float(step_size) * grad
+        w = project_box_budget(w, w_max=w_max, budget=budget).detach().requires_grad_(True)
+
+    return w.detach()
+
+
 @dataclass
 class AdvTrainConfig:
     enabled: bool
@@ -49,10 +112,21 @@ class AdvTrainConfig:
     tau: float = 0.5
     seed_stride: int = 1000
 
+    # NIFA (graph-variant adversary)
     nifa_node: Optional[List[int]] = None
     nifa_edge: Optional[List[int]] = None
     nifa_ratio: Optional[List[float]] = None
     nifa_gamma: Optional[List[float]] = None
+
+    # Edge-weight adversary (inner max over weights on a fixed candidate edge set)
+    edge_steps: int = 5
+    edge_step_size: float = 0.1
+    edge_init: str = "rand"      # rand | zero
+    edge_use_sign: bool = True   # PGD sign(grad) vs raw grad
+    edge_budget: float = -1.0    # <0 disables sum(w) constraint
+    edge_w_max: float = 1.0      # box: 0<=w<=edge_w_max
+    edge_policy: str = "same_smallest"
+    edge_k_per_node: int = 0     # 0 => fall back to args.edge_k
 
     @classmethod
     def from_args(cls, args) -> "AdvTrainConfig":
@@ -74,14 +148,23 @@ class AdvTrainConfig:
             nifa_edge=_broadcast_list(getattr(args, "advtrain_nifa_edge", None), k, "advtrain_nifa_edge"),
             nifa_ratio=_broadcast_list(getattr(args, "advtrain_nifa_ratio", None), k, "advtrain_nifa_ratio"),
             nifa_gamma=_broadcast_list(getattr(args, "advtrain_nifa_gamma", None), k, "advtrain_nifa_gamma"),
+            edge_steps=int(getattr(args, "advtrain_edge_steps", 5)),
+            edge_step_size=float(getattr(args, "advtrain_edge_step_size", 0.1)),
+            edge_init=str(getattr(args, "advtrain_edge_init", "rand")),
+            edge_use_sign=(str(getattr(args, "advtrain_edge_grad", "sign")).lower() != "raw"),
+            edge_budget=float(getattr(args, "advtrain_edge_budget", -1.0)),
+            edge_w_max=float(getattr(args, "advtrain_edge_w_max", 1.0)),
+            edge_policy=str(getattr(args, "advtrain_edge_policy", "same_smallest")),
+            edge_k_per_node=int(getattr(args, "advtrain_edge_k", 0) or 0),
         )
 
 
 class AdvGraphPool:
-    """
-    Generates attacked graph variants using NIFA.
+    """Generates attacked graph variants using NIFA.
+
     Expects the caller to provide snapshot_clean_data/restore_from_snapshot on their side.
     """
+
     def __init__(self, args, cfg: AdvTrainConfig, clean_snapshot: dict, restore_fn, seed: int, device):
         self.args = args
         self.cfg = cfg
@@ -125,13 +208,14 @@ class AdvGraphPool:
         return ns
 
     def _gen(self, epoch: int):
+        if self.cfg.attack != "nifa":
+            raise ValueError(f"AdvGraphPool only supports attack='nifa', got {self.cfg.attack}")
         out = []
         for i in range(int(self.cfg.k)):
             seed_i = self.seed + i * int(self.cfg.seed_stride) + int(epoch)
             d = self.restore_fn(self.clean_snapshot, self.device)
-            if self.cfg.attack == "nifa":
-                a = self._variant_args(i)
-                with temp_seed(seed_i):
-                    d = apply_nifa_attack(a, d)
+            a = self._variant_args(i)
+            with temp_seed(seed_i):
+                d = apply_nifa_attack(a, d)
             out.append(d)
         return out

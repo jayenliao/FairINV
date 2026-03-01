@@ -12,7 +12,13 @@ from args import get_parser
 from data import FairDataset
 from utils import Results, configure_threads, set_seed, get_metrics
 from policies import build_policies
-from adv_training import AdvTrainConfig, AdvGraphPool, reduce_tensor_list
+from adv_training import (
+    AdvTrainConfig,
+    AdvGraphPool,
+    reduce_tensor_list,
+    pgd_maximize_weights,
+    build_added_edge_sparse
+)
 from models import ConstructModel, FairINV, EdgeAdder
 from logger import EpochLogger
 from nifa_bridge import apply_nifa_attack
@@ -1007,9 +1013,30 @@ def run_vanilla(args, data, seed_dir):
     # Adv setup
     adv_cfg = AdvTrainConfig.from_args(args)
     adv_pool = None
+    adv_edge_cand_ij = None  # LongTensor [2, M] for advtrain_attack=edge_weight
     if adv_cfg.enabled:
-        base_snap = snapshot_clean_data(data)
-        adv_pool = AdvGraphPool(args, adv_cfg, base_snap, restore_from_snapshot, seed=seed, device=device)
+        if adv_cfg.attack == "nifa":
+            base_snap = snapshot_clean_data(data)
+            adv_pool = AdvGraphPool(args, adv_cfg, base_snap, restore_from_snapshot, seed=seed, device=device)
+        elif adv_cfg.attack == "edge_weight":
+            # Build a fixed candidate set of added edges once (policy-based, scalable).
+            policy_name = str(getattr(args, "advtrain_edge_policy", adv_cfg.edge_policy))
+            k_per_node = int(getattr(args, "advtrain_edge_k", 0) or adv_cfg.edge_k_per_node or getattr(args, "edge_k", 2))
+            # Candidate construction uses features by default. (If you want embedding-based candidates,
+            # do that upstream and pass the embedding tensor here.)
+            policies_ij = build_policies(
+                X.detach(), data.sens, EI,
+                policy_names=[policy_name],
+                k_per_node=k_per_node,
+                seed=seed
+            )
+            if policy_name not in policies_ij:
+                raise ValueError(f"Unknown advtrain_edge_policy='{policy_name}'. Available keys: {list(policies_ij.keys())}")
+            adv_edge_cand_ij = policies_ij[policy_name].to(X.device)
+        elif adv_cfg.attack == "none":
+            adv_pool = None
+        else:
+            raise ValueError(f"Unknown advtrain_attack='{adv_cfg.attack}'. Expected one of: none, nifa, edge_weight.")
 
     # Build models (backbone + clf)
     backbone = ConstructModel(in_dim, args.hid_dim, args.encoder, args.layer_num).to(device)
@@ -1043,17 +1070,88 @@ def run_vanilla(args, data, seed_dir):
         adv_losses = []
 
         # ---- adversarial training variants ----
-        if adv_pool is not None and adv_cfg.enabled and adv_cfg.k > 0:
-            variants = adv_pool.get_variants(ep)
-            for dv in variants:
-                Hv = backbone(dv.features, dv.edge_index)
-                logv = clf(Hv).squeeze(1)
+        if adv_cfg.enabled and adv_cfg.k > 0:
+            if adv_cfg.attack == "nifa" and adv_pool is not None:
+                variants = adv_pool.get_variants(ep)
+                for dv in variants:
+                    Hv = backbone(dv.features, dv.edge_index)
+                    logv = clf(Hv).squeeze(1)
 
-                lb = loss_fn(logv[dv.idx_train], dv.labels[dv.idx_train].float())
-                ldp = _soft_dp_from_logits(logv, dv.sens, dv.idx_train)
-                leo = _get_eo_loss(logv, dv.labels, dv, dv.idx_train, eo_mode)
-                adv_losses.append(lb + (lam_dp * ldp) + (lam_eo * leo))
+                    lb = loss_fn(logv[dv.idx_train], dv.labels[dv.idx_train].float())
+                    ldp = _soft_dp_from_logits(logv, dv.sens, dv.idx_train)
+                    leo = _get_eo_loss(logv, dv.labels, dv, dv.idx_train, eo_mode)
+                    adv_losses.append(lb + (lam_dp * ldp) + (lam_eo * leo))
 
+            elif adv_cfg.attack == "edge_weight" and adv_edge_cand_ij is not None:
+                # Inner max over weights on the fixed candidate edge set, then outer min over model params.
+                # Here, adv_cfg.k acts as "PGD restarts" (different w initializations).
+                N = int(X.size(0))
+                M = int(adv_edge_cand_ij.size(1))
+
+                # (1) inner max: compute w_adv per restart under eval() (deterministic; avoids BN/dropout noise)
+                was_train_backbone = backbone.training
+                was_train_clf = clf.training
+                backbone.eval()
+                clf.eval()
+
+                w_advs = []
+                for r in range(int(adv_cfg.k)):
+                    if M == 0:
+                        w_advs.append(torch.empty(0, device=X.device))
+                        continue
+
+                    if str(adv_cfg.edge_init).lower() == "zero":
+                        w0 = torch.zeros(M, device=X.device)
+                    else:
+                        w0 = torch.rand(M, device=X.device) * float(adv_cfg.edge_w_max)
+
+                    def _loss_w(w: torch.Tensor) -> torch.Tensor:
+                        A_add = build_added_edge_sparse(N, adv_edge_cand_ij, w)
+                        A_adv = (EI + A_add).coalesce()
+                        Hv = backbone(X, A_adv)
+                        logv = clf(Hv).squeeze(1)
+
+                        lb = loss_fn(logv[idx_tr], Y[idx_tr].float())
+                        ldp = _soft_dp_from_logits(logv, data.sens, idx_tr)
+                        leo = _get_eo_loss(logv, Y, data, idx_tr, eo_mode)
+                        return lb + (lam_dp * ldp) + (lam_eo * leo)
+
+                    w_adv = pgd_maximize_weights(
+                        _loss_w,
+                        w0=w0,
+                        steps=int(adv_cfg.edge_steps),
+                        step_size=float(adv_cfg.edge_step_size),
+                        use_sign=bool(adv_cfg.edge_use_sign),
+                        w_max=float(adv_cfg.edge_w_max),
+                        budget=float(adv_cfg.edge_budget),
+                    )
+                    w_advs.append(w_adv)
+
+                # restore train/eval states
+                if was_train_backbone:
+                    backbone.train()
+                else:
+                    backbone.eval()
+                if was_train_clf:
+                    clf.train()
+                else:
+                    clf.eval()
+
+                # (2) outer loss on each adversarially-weighted graph (in current training mode)
+                for w_adv in w_advs:
+                    if w_adv.numel() == 0:
+                        continue
+                    A_add = build_added_edge_sparse(N, adv_edge_cand_ij, w_adv)
+                    A_adv = (EI + A_add).coalesce()
+                    Hv = backbone(X, A_adv)
+                    logv = clf(Hv).squeeze(1)
+
+                    lb = loss_fn(logv[idx_tr], Y[idx_tr].float())
+                    ldp = _soft_dp_from_logits(logv, data.sens, idx_tr)
+                    leo = _get_eo_loss(logv, Y, data, idx_tr, eo_mode)
+                    adv_losses.append(lb + (lam_dp * ldp) + (lam_eo * leo))
+
+            # aggregate
             if len(adv_losses) > 0:
                 if adv_cfg.mode == "mix":
                     loss = loss_clean + adv_cfg.mix_lambda * reduce_tensor_list(adv_losses, method="mean", tau=adv_cfg.tau)
@@ -1063,7 +1161,6 @@ def run_vanilla(args, data, seed_dir):
                         items.append(loss_clean)
                     items.extend(adv_losses)
                     loss = reduce_tensor_list(items, method=adv_cfg.reduce, tau=adv_cfg.tau)
-
 
         # --- Train metrics & logging ---
         with torch.no_grad():
@@ -1209,6 +1306,7 @@ def run_vanilla(args, data, seed_dir):
 
         print(f"[TEST] (Seed {seed}) AUC: {auc_test:.4f}  F1: {f1_test:.4f}  ACC: {acc_test:.4f}  DP: {dp_test:.4f}  EO: {eo_test:.4f}")
         return auc_test, f1_test, acc_test, dp_test, eo_test
+
 def load_best_overall_into_args(args):
     """If args.best_overall_path is set, override key HPs from its 'params'."""
 

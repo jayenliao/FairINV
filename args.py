@@ -113,14 +113,16 @@ def get_parser():
     # --- Adversarial training defense ---
     parser.add_argument('--advtrain', action='store_true',
                         help='Enable adversarial training defense (generate attacked graphs during training).')
-    parser.add_argument('--advtrain_attack', choices=['none','nifa'], default='nifa',
-                        help='Adversary used for generating training-time attacked graphs.')
+    parser.add_argument('--advtrain_attack', choices=['none','nifa','edge_weight'], default='nifa',
+                        help=("Adversary used for training-time robustness. "
+                              "nifa: generate attacked graph variants. "
+                              "edge_weight: inner-max over weights on a fixed candidate added-edge set."))
     parser.add_argument('--advtrain_mode', choices=['mix','robust'], default='mix',
                         help="mix: L_clean + lambda_adv * mean(L_adv). robust: reduce over {clean, adv_i}.")
     parser.add_argument('--advtrain_k', type=int, default=1,
-                        help='Number of attacked graph variants per epoch.')
+                        help='Number of adversarial variants per epoch (NIFA: different attack seeds; edge_weight: PGD restarts).')
     parser.add_argument('--advtrain_gen', choices=['precompute','on_the_fly'], default='precompute',
-                        help='How to generate attacked graphs.')
+                        help='How to generate attacked graphs (only used by advtrain_attack=nifa).')
     parser.add_argument('--advtrain_refresh', type=int, default=0,
                         help='When advtrain_gen=on_the_fly, regenerate every N epochs (0 disables).')
     parser.add_argument('--advtrain_cache_device', action='store_true',
@@ -146,6 +148,25 @@ def get_parser():
                         help='Per-variant target ratio.')
     parser.add_argument('--advtrain_nifa_gamma', nargs='+', type=float, default=None,
                         help='Per-variant NIFA gamma (utility weight).')
+
+    # Edge-weight adversary settings (advtrain_attack=edge_weight)
+    parser.add_argument('--advtrain_edge_policy', type=str, default='cross_smallest',
+                        help=("Candidate edge policy name used to build the fixed added-edge set "
+                              "(e.g., cross_smallest, same_largest, cross_random, same_random, ...)."))
+    parser.add_argument('--advtrain_edge_k', type=int, default=0,
+                        help='Candidate edges per node for advtrain_attack=edge_weight (0 => use --edge_k).')
+    parser.add_argument('--advtrain_edge_steps', type=int, default=5,
+                        help='PGD steps for inner maximization over added-edge weights.')
+    parser.add_argument('--advtrain_edge_step_size', type=float, default=0.1,
+                        help='PGD step size for inner maximization over added-edge weights.')
+    parser.add_argument('--advtrain_edge_init', choices=['rand','zero'], default='rand',
+                        help='Initialization of added-edge weights for PGD restarts.')
+    parser.add_argument('--advtrain_edge_grad', choices=['sign','raw'], default='sign',
+                        help='PGD update direction: sign(grad) (default) or raw grad.')
+    parser.add_argument('--advtrain_edge_w_max', type=float, default=1.0,
+                        help='Box constraint max for added-edge weights (0 <= w <= w_max).')
+    parser.add_argument('--advtrain_edge_budget', type=float, default=-1.0,
+                        help='Optional sum constraint for weights: sum(w) <= budget. Set <0 to disable.')
 
     # EdgeAdder option: whether candidates may involve injected nodes
     parser.add_argument('--edge_include_injected', action='store_true',
