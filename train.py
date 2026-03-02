@@ -1003,6 +1003,7 @@ def run_vanilla(args, data, seed_dir):
     X = data.features
     Y = data.labels
     EI = data.edge_index   # SparseTensor
+    EI_val = EI.fill_value(1.0, dtype=torch.float32).coalesce()
     idx_tr, idx_va, idx_te = data.idx_train, data.idx_val, data.idx_test
     in_dim = X.shape[1]
     out_dim = 1
@@ -1107,7 +1108,7 @@ def run_vanilla(args, data, seed_dir):
 
                     def _loss_w(w: torch.Tensor) -> torch.Tensor:
                         A_add = build_added_edge_sparse(N, adv_edge_cand_ij, w)
-                        A_adv = (EI + A_add).coalesce()
+                        A_adv = (EI_val + A_add).coalesce()
                         Hv = backbone(X, A_adv)
                         logv = clf(Hv).squeeze(1)
 
@@ -1142,7 +1143,7 @@ def run_vanilla(args, data, seed_dir):
                     if w_adv.numel() == 0:
                         continue
                     A_add = build_added_edge_sparse(N, adv_edge_cand_ij, w_adv)
-                    A_adv = (EI + A_add).coalesce()
+                    A_adv = (EI_val + A_add).coalesce()
                     Hv = backbone(X, A_adv)
                     logv = clf(Hv).squeeze(1)
 

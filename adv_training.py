@@ -87,7 +87,16 @@ def pgd_maximize_weights(
 
     for _ in range(steps):
         loss = loss_fn(w)
-        grad = torch.autograd.grad(loss, w, only_inputs=True, retain_graph=False, create_graph=False)[0]
+        grad = torch.autograd.grad(
+            loss, w,
+            only_inputs=True,
+            retain_graph=False,
+            create_graph=False,
+            allow_unused=True,
+        )[0]
+        if grad is None:
+            # w is not connected to loss -> no inner-max possible
+            return project_box_budget(w.detach(), w_max=w_max, budget=budget).detach()
         if use_sign:
             grad = grad.sign()
         w = w + float(step_size) * grad
