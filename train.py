@@ -25,6 +25,13 @@ from nifa_bridge import apply_nifa_attack
 from torch_sparse import SparseTensor
 from types import SimpleNamespace
 
+def _normalize_policy_names(policy_names):
+    if policy_names is None:
+        return []
+    if isinstance(policy_names, str):
+        return [p.strip() for p in policy_names.split(',') if p.strip()]
+    return [str(p).strip() for p in policy_names if str(p).strip()]
+
 def snapshot_clean_data(data):
     """Lightweight immutable snapshot on CPU; safe for per-seed restores."""
     snap = {
@@ -389,8 +396,7 @@ def run_edge_adder_unified(args, data, seed_dir):
         use_minmax = (args.model == "edge_minmax")
 
         if use_minmax:
-            _pn = getattr(args, "policy_names", "same_largest,cross_smallest,same_smallest,cross_random,same_random")
-            policy_names = [p.strip() for p in str(_pn).split(',') if p.strip()]
+            policy_names = _normalize_policy_names(getattr(args, "policy_names", None))
             policies_ij = build_policies(
                 feat_for_cand, data.sens, EI,
                 policy_names=policy_names,
@@ -830,7 +836,7 @@ def run_edge_adder_unified(args, data, seed_dir):
     if use_minmax:
         pol_pairs = build_policies(
             X, data.sens, EI,
-            policy_names=getattr(args, "policy_names", []),
+            policy_names=_normalize_policy_names(getattr(args, "policy_names", [])),
             k_per_node=getattr(args, "edge_k", 2),
             seed=seed
         )
