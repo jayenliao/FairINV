@@ -55,7 +55,7 @@ ADV_EDGE_BUDGET="${ADV_EDGE_BUDGET:-1}"     # <0 disables budget; default -1
 EDGE_K="${EDGE_K:-2}"                       # used if ADV_EDGE_K=0 and train.py has --edge_k
 
 # Logging
-LOG_ROOT="${LOG_ROOT:-${REPO_ROOT}/logs/advtrain_edge/${ADVTRAIN_ATTACK}_k-${ADV_K}_dp-${LAMBDA_DP}_eo-${LAMBDA_EO}_policy-${ADV_EDGE_POLICY}}"
+LOG_ROOT="${LOG_ROOT:-${REPO_ROOT}/logs/advtrain_edge/${ADVTRAIN_ATTACK}/${ADV_EDGE_POLICY}/k-${ADV_K}_steps-${ADV_EDGE_STEPS}_dp-${LAMBDA_DP}_eo-${LAMBDA_EO}}"
 mkdir -p "${LOG_ROOT}"
 echo "[INFO] Logs will be written to: ${LOG_ROOT}"
 tStart=$(date +%s)
