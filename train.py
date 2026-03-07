@@ -214,6 +214,20 @@ def _get_eo_loss(logits, Y, data, idx_tr, eo_mode):
         raise ValueError(f"Unknown eo_mode: {eo_mode}")
     return loss_eo
 
+
+def _fairness_obj_from_logits(logits, labels, data_obj, idx, sens, lam_dp, lam_eo, eo_mode):
+    """Return fairness-only objective and its components."""
+    loss_dp = _soft_dp_from_logits(logits, sens, idx) if lam_dp > 0.0 else None
+    loss_eo = _get_eo_loss(logits, labels, data_obj, idx, eo_mode) if lam_eo > 0.0 else None
+
+    fair_obj = logits.new_zeros(())
+    if loss_dp is not None:
+        fair_obj = fair_obj + (lam_dp * loss_dp)
+    if loss_eo is not None:
+        fair_obj = fair_obj + (lam_eo * loss_eo)
+
+    return fair_obj, loss_dp, loss_eo
+
 def _blend(A_base: SparseTensor, edge_adder: EdgeAdder | None, num_nodes: int | None = None):
     """Return blended SparseTensor A = A_base (+ soft edges if provided).
 
@@ -1069,9 +1083,10 @@ def run_vanilla(args, data, seed_dir):
         logits = clf(H).squeeze(1)
 
         loss_bce = loss_fn(logits[idx_tr], Y[idx_tr].float())
-        loss_dp  = _soft_dp_from_logits(logits, data.sens, idx_tr)
-        loss_eo  = _get_eo_loss(logits, Y, data, idx_tr, eo_mode)
-        loss_clean = loss_bce + (lam_dp * loss_dp) + (lam_eo * loss_eo)
+        fair_clean, loss_dp, loss_eo = _fairness_obj_from_logits(
+            logits, Y, data, idx_tr, data.sens, lam_dp, lam_eo, eo_mode
+        )
+        loss_clean = loss_bce + fair_clean
         loss = loss_clean
 
         adv_losses = []
@@ -1084,10 +1099,10 @@ def run_vanilla(args, data, seed_dir):
                     Hv = backbone(dv.features, dv.edge_index)
                     logv = clf(Hv).squeeze(1)
 
-                    lb = loss_fn(logv[dv.idx_train], dv.labels[dv.idx_train].float())
-                    ldp = _soft_dp_from_logits(logv, dv.sens, dv.idx_train)
-                    leo = _get_eo_loss(logv, dv.labels, dv, dv.idx_train, eo_mode)
-                    adv_losses.append(lb + (lam_dp * ldp) + (lam_eo * leo))
+                    fair_adv, _, _ = _fairness_obj_from_logits(
+                        logv, dv.labels, dv, dv.idx_train, dv.sens, lam_dp, lam_eo, eo_mode
+                    )
+                    adv_losses.append(fair_adv)
 
             elif adv_cfg.attack == "edge_weight" and adv_edge_cand_ij is not None:
                 # Inner max over weights on the fixed candidate edge set, then outer min over model params.
@@ -1102,7 +1117,7 @@ def run_vanilla(args, data, seed_dir):
                 clf.eval()
 
                 w_advs = []
-                for r in range(int(adv_cfg.k)):
+                for _ in range(int(adv_cfg.k)):
                     if M == 0:
                         w_advs.append(torch.empty(0, device=X.device))
                         continue
@@ -1118,10 +1133,10 @@ def run_vanilla(args, data, seed_dir):
                         Hv = backbone(X, A_adv)
                         logv = clf(Hv).squeeze(1)
 
-                        lb = loss_fn(logv[idx_tr], Y[idx_tr].float())
-                        ldp = _soft_dp_from_logits(logv, data.sens, idx_tr)
-                        leo = _get_eo_loss(logv, Y, data, idx_tr, eo_mode)
-                        return lb + (lam_dp * ldp) + (lam_eo * leo)
+                        fair_adv, _, _ = _fairness_obj_from_logits(
+                            logv, Y, data, idx_tr, data.sens, lam_dp, lam_eo, eo_mode
+                        )
+                        return fair_adv
 
                     w_adv = pgd_maximize_weights(
                         _loss_w,
@@ -1153,21 +1168,26 @@ def run_vanilla(args, data, seed_dir):
                     Hv = backbone(X, A_adv)
                     logv = clf(Hv).squeeze(1)
 
-                    lb = loss_fn(logv[idx_tr], Y[idx_tr].float())
-                    ldp = _soft_dp_from_logits(logv, data.sens, idx_tr)
-                    leo = _get_eo_loss(logv, Y, data, idx_tr, eo_mode)
-                    adv_losses.append(lb + (lam_dp * ldp) + (lam_eo * leo))
+                    fair_adv, _, _ = _fairness_obj_from_logits(
+                        logv, Y, data, idx_tr, data.sens, lam_dp, lam_eo, eo_mode
+                    )
+                    adv_losses.append(fair_adv)
 
             # aggregate
             if len(adv_losses) > 0:
                 if adv_cfg.mode == "mix":
-                    loss = loss_clean + adv_cfg.mix_lambda * reduce_tensor_list(adv_losses, method="mean", tau=adv_cfg.tau)
+                    loss = loss_clean + adv_cfg.mix_lambda * reduce_tensor_list(
+                        adv_losses, method="mean", tau=adv_cfg.tau
+                    )
                 else:
-                    items = []
+                    fair_items = []
                     if adv_cfg.include_clean:
-                        items.append(loss_clean)
-                    items.extend(adv_losses)
-                    loss = reduce_tensor_list(items, method=adv_cfg.reduce, tau=adv_cfg.tau)
+                        fair_items.append(fair_clean)
+                    fair_items.extend(adv_losses)
+                    fair_robust = reduce_tensor_list(
+                        fair_items, method=adv_cfg.reduce, tau=adv_cfg.tau
+                    )
+                    loss = loss_bce + fair_robust
 
         # --- Train metrics & logging ---
         with torch.no_grad():
@@ -1205,6 +1225,10 @@ def run_vanilla(args, data, seed_dir):
             loss_eo_val = _get_eo_loss(logit_val, Y, data, idx_va, eo_mode) if lam_eo > 0.0 else None
             l1_val = None
             loss_val_total = loss_bce_val
+            if loss_dp_val is not None:
+                loss_val_total = loss_val_total + (lam_dp * loss_dp_val)
+            if loss_eo_val is not None:
+                loss_val_total = loss_val_total + (lam_eo * loss_eo_val)
 
         pred_val = (logit_val > 0).long()
         auc, f1, acc, dp, eo = get_metrics(
@@ -1235,7 +1259,7 @@ def run_vanilla(args, data, seed_dir):
         }
         elog.log(ep, "val", metrics_val)
 
-        message = f"loss(bce): {loss.item():.3f}"
+        message = f"loss(total): {loss.item():.3f}, loss_bce(clean): {loss_bce.item():.3f}"
         message += f", auc: {auc:.3f}, f1: {f1:.3f}, acc: {acc:.3f}, dp: {dp:.3f}, eo: {eo:.3f}"
         if (ep+1) % args.log_interval == 0:
             pbar.set_postfix({"Metrics": message})
