@@ -56,21 +56,44 @@ def _filter_non_edges(i: Tensor, j: Tensor, Aset: set):
         return (torch.empty(0, dtype=torch.long, device=i.device),
                 torch.empty(0, dtype=torch.long, device=i.device))
     ii, jj = zip(*keep)
-    return torch.tensor(ii, dtype=torch.long, device=i.device), \
-           torch.tensor(jj, dtype=torch.long, device=i.device)
+    return torch.tensor(ii, dtype=torch.long, device=i.device), torch.tensor(jj, dtype=torch.long, device=i.device)
 
 @torch.no_grad()
 def _random_pairs(idx_a: Tensor, idx_b: Tensor, per_node: int, Aset: set, device):
     i_all, j_all = [], []
+    pool = idx_b.tolist()
     for u in idx_a.tolist():
         # sample without replacement
-        cand = [v for v in idx_b.tolist()
+        cand = [v for v in pool
                 if (u, v) not in Aset and (v, u) not in Aset and v != u]
         if not cand:
             continue
         m = min(per_node, len(cand))
         pick = random.sample(cand, m)
         i_all.extend([u]*m)
+        j_all.extend(pick)
+    if not i_all:
+        return (torch.empty(0, dtype=torch.long, device=device),
+                torch.empty(0, dtype=torch.long, device=device))
+    return torch.tensor(i_all, device=device), torch.tensor(j_all, device=device)
+
+@torch.no_grad()
+def _random_pairs_from_pool(idx_src: Tensor, idx_pool: Tensor, per_node: int, Aset: set, device):
+    """
+    For each source node in idx_src, randomly sample up to `per_node` target nodes
+    from idx_pool, excluding self-loops and already-existing edges.
+    This ignores sensitive-group membership entirely.
+    """
+    i_all, j_all = [], []
+    pool = idx_pool.tolist()
+    for u in idx_src.tolist():
+        cand = [v for v in pool
+                if v != u and (u, v) not in Aset and (v, u) not in Aset]
+        if not cand:
+            continue
+        m = min(per_node, len(cand))
+        pick = random.sample(cand, m)
+        i_all.extend([u] * m)
         j_all.extend(pick)
     if not i_all:
         return (torch.empty(0, dtype=torch.long, device=device),
@@ -92,6 +115,7 @@ def build_policies(
       p3: same-group smallest similarity
       p4: random cross-group
       p5: random same-group
+      p6: random over all nodes, ignoring sensitive groups
     """
     if len(policy_names) == 0:
         raise ValueError("policy_names cannot be empty")
@@ -108,7 +132,10 @@ def build_policies(
         mask[node_subset] = True
         idx0 = idx0[mask[idx0]]
         idx1 = idx1[mask[idx1]]
-        
+        idx_all = node_subset
+    else:
+        idx_all = torch.arange(features.size(0), dtype=torch.long)
+
     out = {}
 
     # p1: same-group largest similarity
@@ -161,6 +188,14 @@ def build_policies(
         i5b, j5b = _random_pairs(idx1, idx1, k_per_node, Aset, device) if len(idx1) else (torch.empty(0, dtype=torch.long, device=device),)*2
         i5 = torch.cat([i5a, i5b]); j5 = torch.cat([j5a, j5b])
         out[policy_name] = torch.stack([i5, j5], dim=0) if i5.numel() else torch.empty(2, 0, dtype=torch.long, device=device)
+    else:
+        out[policy_name] = torch.empty(2, 0, dtype=torch.long, device=device)
+
+    # p6: random over all nodes (ignore sensitive groups)
+    policy_name = "global_random"
+    if policy_name in policy_names:
+        i6, j6 = _random_pairs_from_pool(idx_all, idx_all, k_per_node, Aset, device)
+        out[policy_name] = torch.stack([i6, j6], dim=0) if i6.numel() else torch.empty(2, 0, dtype=torch.long, device=device)
     else:
         out[policy_name] = torch.empty(2, 0, dtype=torch.long, device=device)
 

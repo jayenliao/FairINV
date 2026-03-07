@@ -79,7 +79,8 @@ def get_parser():
     # edge minmax specific
     parser.add_argument("--policy_names", nargs='+',
                         default=["same_largest", "cross_smallest", "same_smallest", "cross_random", "same_random"],
-                        help="Edge selection policies to use.")
+                        help=("Edge selection policies to use. "
+                              "Available: same_largest, cross_smallest, same_smallest, cross_random, same_random, global_random."))
     parser.add_argument('--max_reduce', type=str, choices=['max','logsumexp'], default='max')
     parser.add_argument('--lse_tau', type=float, default=0.5)
 
@@ -152,7 +153,7 @@ def get_parser():
     # Edge-weight adversary settings (advtrain_attack=edge_weight)
     parser.add_argument('--advtrain_edge_policy', type=str, default='cross_smallest',
                         help=("Candidate edge policy name used to build the fixed added-edge set "
-                              "(e.g., cross_smallest, same_largest, cross_random, same_random, ...)."))
+                              "(e.g., cross_smallest, same_largest, cross_random, same_random, global_random, ...)."))
     parser.add_argument('--advtrain_edge_k', type=int, default=0,
                         help='Candidate edges per node for advtrain_attack=edge_weight (0 => use --edge_k).')
     parser.add_argument('--advtrain_edge_steps', type=int, default=5,
