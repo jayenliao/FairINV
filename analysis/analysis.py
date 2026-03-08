@@ -1,18 +1,7 @@
 import numpy as np
 import pandas as pd
-import argparse, json, re
+import argparse, json, re, os
 from pathlib import Path
-# from visualize import (
-#     collect_results_among_seeds,
-#     plot_metric_heatmap,
-#     plot_dumbbell_vs_vanilla,
-#     plot_grouped_bars_per_dataset,
-#     plot_table_with_bars,
-#     win_counts,
-#     plot_win_counts,
-#     plot_fairness_utility_tradeoff,
-#     plot_delta_heatmaps,
-# )
 
 METRIC_KEYS = ["dp_mean", "eo_mean", "f1_mean", "auc_mean"]
 MAP_METRIC_TO_LABEL = {
@@ -385,7 +374,7 @@ if __name__ == "__main__":
         print(f"Experiment directory: {args.exp_dir}")
         exp_dir = Path(args.exp_dir.replace("logs", "analysis"))
         print(f"Analysis directory: {exp_dir}")
-        exp_dir.mkdir(exist_ok=True)
+        os.makedirs(exp_dir, exist_ok=True)
         auto_path = exp_dir / f"aggregated_results_{args.split_name}.csv"
         df_agg.to_csv(auto_path, index=False)
         print(f"Aggregated results saved to {auto_path}")
