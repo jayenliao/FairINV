@@ -22,8 +22,9 @@ cd "${REPO_ROOT}"
 
 # --------------- User knobs (override via env vars) ---------------
 GPU_ID="${GPU_ID:-0}"
+OMP_NUM_THREADS="${OMP_NUM_THREADS:-12}"
 export CUDA_VISIBLE_DEVICES="${GPU_ID}"
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:-6}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS}"
 
 # Compare settings
 DATASETS="${DATASETS:-bail pokec_z pokec_n german nba}"
@@ -72,7 +73,7 @@ EDGE_K="${EDGE_K:-2}"                       # used if ADV_EDGE_K=0 and train.py 
 ADV_NIFA_GAMMA="${ADV_NIFA_GAMMA:-0}"
 
 # Logging
-LOG_TAG="${LOG_TAG:-${ADVTRAIN_ATTACK}_mode-${ADV_MODE}_k-${ADV_K}_dp-${LAMBDA_DP}_eo-${LAMBDA_EO}_policy-${ADV_EDGE_POLICY}}"
+LOG_TAG="${LOG_TAG:-${ADVTRAIN_ATTACK}_mode-${ADV_MODE}_k-${ADV_K}_steps-${ADV_EDGE_STEPS}_dp-${LAMBDA_DP}_eo-${LAMBDA_EO}_policy-${ADV_EDGE_POLICY}}"
 LOG_ROOT="${LOG_ROOT:-${REPO_ROOT}/logs/advtrain_edge_fairness_only/${LOG_TAG}}"
 mkdir -p "${LOG_ROOT}"
 echo "[INFO] Logs will be written to: ${LOG_ROOT}"
