@@ -522,8 +522,9 @@ def plot_grouped_bars_per_dataset(
     metric_label="DP_mean (%)",
     ncols=3,
     rotate_xticks=0,
-    value_fmt="{:.2f}",            # <-- added
-    label_padding=2,               # <-- added (points)
+    value_fmt="{:.2f}",
+    label_padding=2,
+    legend_idx=0,
 ):
     assert isinstance(pt_percent.index, pd.MultiIndex), "pt_percent must have MultiIndex index=[dataset, method]"
     assert "dataset" in pt_percent.index.names and "method" in pt_percent.index.names, \
@@ -577,7 +578,7 @@ def plot_grouped_bars_per_dataset(
             ax.set_ylabel(metric_label)
 
         # Keep legend only on first subplot (less clutter)
-        if i == 0:
+        if i == legend_idx:
             ax.legend(frameon=True)
 
     # Hide unused axes
