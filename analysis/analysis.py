@@ -385,7 +385,7 @@ if __name__ == "__main__":
     # Step 3: Get pivot tables
     contains_10_seeds = df_agg["epoch_count"] == 10
     if not contains_10_seeds.all():
-        print("Warning: Not all groups have 10 seeds. Check 'epoch_count' column for details.")
+        print("\033[93mWarning: Not all groups have 10 seeds. Check 'epoch_count' column for details.\033[0m")
 
     # pts_attacked = {}
     # for metric in METRIC_KEYS:
